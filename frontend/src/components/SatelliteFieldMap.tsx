@@ -1,8 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useMemo, useState } from 'react';
 import { MapPin, Layers, Crosshair } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -70,6 +70,30 @@ export default function SatelliteFieldMap({ lat, lon, language, boundary = [], o
     );
   };
 
+    // Inline SVG marker — avoids Leaflet's default icon 404s and needs no network.
+  const [fieldIcon, setFieldIcon] = useState<any>(null);
+  useEffect(() => {
+    let alive = true;
+    import('leaflet').then((L) => {
+      if (!alive) return;
+      setFieldIcon(
+        L.divIcon({
+          className: '',
+          iconSize: [30, 30],
+          iconAnchor: [15, 30],
+          popupAnchor: [0, -28],
+          html: `<svg width="30" height="30" viewBox="0 0 24 24" fill="none"
+                      xmlns="http://www.w3.org/2000/svg">
+                   <path d="M12 22s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"
+                         fill="#1B7A43" stroke="#fff" stroke-width="1.6"/>
+                   <circle cx="12" cy="11" r="2.6" fill="#fff"/>
+                 </svg>`,
+        }),
+      );
+    });
+    return () => { alive = false; };
+  }, []);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-leaf-100 bg-white shadow-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-leaf-50 px-3 py-2.5">
@@ -102,12 +126,14 @@ export default function SatelliteFieldMap({ lat, lon, language, boundary = [], o
           <TileLayer url={tileUrl} attribution="&copy; OpenStreetMap contributors" />
           {showNdvi && ndviUrl && <TileLayer url={ndviUrl} opacity={0.6} />}
           <ClickCapture onClick={handleClick} />
-          <Marker position={[lat, lon]}>
-            <Popup>
-              {hi ? 'खेत का केंद्र' : 'Field centre'}<br />
-              {lat.toFixed(5)}, {lon.toFixed(5)}
-            </Popup>
-          </Marker>
+          {fieldIcon && (
+            <Marker position={[lat, lon]} icon={fieldIcon}>
+              <Popup>
+                {hi ? 'खेत का केंद्र' : 'Field centre'}<br />
+                {lat.toFixed(5)}, {lon.toFixed(5)}
+              </Popup>
+            </Marker>
+          )}
           {polygon.length >= 3 && (
             <Polygon positions={polygon} pathOptions={{ color: '#1B7A43', fillOpacity: 0.22, weight: 2 }} />
           )}

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Leaf, Settings2, WifiOff, Wifi, X } from 'lucide-react';
-import VoiceSearchBar from '@/app/api/components/VoiceSearchBar';
-import HybridCopilotChat from '@/app/api/components/HybridCopilotChat';
-import SatelliteFieldMap from '@/app/api/components/SatelliteFieldMap';
+import VoiceSearchBar from '@/components/VoiceSearchBar';
+import HybridCopilotChat from '@/components/HybridCopilotChat';
+import SatelliteFieldMap from '@/components/SatelliteFieldMap';
 import { loadProfile, saveProfile, FarmProfile } from '@/lib/idb';
 import { api, getToken } from '@/lib/api';
 

@@ -86,18 +86,30 @@ export class MandiEngineError extends Error {
 }
 
 function resolveBinary(): string {
+  const exe = process.platform === 'win32' ? '.exe' : '';
   const configured = process.env.MANDI_ENGINE_BIN;
-  const candidates = [
+
+  const bases = [
     configured,
-    path.resolve(process.cwd(), '../mandi-engine/build/mandi_router'),
-    path.resolve(process.cwd(), 'mandi-engine/build/mandi_router'),
+    '../mandi-engine/build/mandi_router',
+    'mandi-engine/build/mandi_router',
+    '../mandi-engine/build/Release/mandi_router',   // MSVC multi-config layout
+    'mandi-engine/build/Release/mandi_router',
     '/opt/render/project/src/mandi-engine/build/mandi_router',
   ].filter(Boolean) as string[];
+
+  // Try each base with and without the platform executable suffix.
+  const candidates: string[] = [];
+  for (const b of bases) {
+    candidates.push(b);
+    if (exe && !b.toLowerCase().endsWith('.exe')) candidates.push(b + exe);
+  }
 
   for (const c of candidates) {
     const abs = path.isAbsolute(c) ? c : path.resolve(process.cwd(), c);
     if (fs.existsSync(abs)) return abs;
   }
+
   throw new MandiEngineError(
     `mandi_router binary not found. Run "make engine". Searched: ${candidates.join(', ')}`,
     'ENGINE_MISSING',

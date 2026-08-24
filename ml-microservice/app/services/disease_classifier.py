@@ -129,14 +129,29 @@ class Diagnosis:
 
 # ══════════════════════ Feature extraction ══════════════════════
 def _segment_leaf(bgr: np.ndarray) -> np.ndarray:
-    """Isolate the leaf from background using Otsu on the saturation channel."""
+    """Isolate the leaf from background: Otsu on saturation, then keep only the
+    largest connected blob so blurred background bokeh is not read as lesion."""
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-    sat = hsv[:, :, 1]
-    sat = cv2.GaussianBlur(sat, (5, 5), 0)
+    sat = cv2.GaussianBlur(hsv[:, :, 1], (5, 5), 0)
     _, mask = cv2.threshold(sat, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    # Keep the single largest component — the leaf in frame.
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if n > 1:
+        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        mask = np.where(labels == largest, 255, 0).astype(np.uint8)
+
+    # Fill interior holes so dark lesions inside the blade stay part of the leaf.
+    filled = mask.copy()
+    h, w = mask.shape
+    flood = np.zeros((h + 2, w + 2), np.uint8)
+    cv2.floodFill(filled, flood, (0, 0), 255)
+    mask = mask | cv2.bitwise_not(filled)
+
     if mask.sum() < 0.05 * mask.size * 255:
         mask = np.full(sat.shape, 255, dtype=np.uint8)  # low-contrast photo
     return mask

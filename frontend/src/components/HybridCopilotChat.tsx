@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bot, User, Loader2, WifiOff, CloudSun, Droplets, Wind, ExternalLink } from 'lucide-react';
 import { api, AgentAction, WeatherSnapshot, SchemeAnswer, friendlyError } from '@/lib/api';
-import { appendChat, recentChat, cacheAdvisory, readAdvisory } from '@/lib/idb';
+import { appendChat, recentChat, clearChat, cacheAdvisory, readAdvisory } from '@/lib/idb';
 import NpkCalculatorWidget from './NpkCalculatorWidget';
 import LeafDiagnosticModal from './LeafDiagnosticModal';
 import MandiProfitWidget from './MandiProfitWidget';
@@ -181,7 +181,14 @@ export default function HybridCopilotChat({ farm, pendingMessage, onReply }: Pro
   useEffect(() => {
     recentChat(12).then((history) => {
       if (history.length) {
-        setTurns(history.map((h, i) => ({ id: `h${i}`, role: h.role, text: h.text })));
+        setTurns(
+          history.map((h, i) => ({
+            id: `h${i}`,
+            role: h.role,
+            text: h.text,
+            actions: (h.actions as AgentAction[] | undefined) ?? undefined,
+          })),
+        );
       }
     });
   }, []);
@@ -210,7 +217,7 @@ export default function HybridCopilotChat({ farm, pendingMessage, onReply }: Pro
       setSessionId(res.sessionId);
       const reply: Turn = { id: `a${Date.now()}`, role: 'assistant', text: res.reply, actions: res.actions };
       setTurns((t) => [...t, reply]);
-      void appendChat({ role: 'assistant', text: res.reply, at: Date.now() });
+            void appendChat({ role: 'assistant', text: res.reply, at: Date.now(), actions: res.actions });
       onReply?.(res.reply);
     } catch (e) {
       setTurns((t) => [...t, {
@@ -265,6 +272,16 @@ export default function HybridCopilotChat({ farm, pendingMessage, onReply }: Pro
 
   return (
     <div className="flex h-full flex-col">
+      {turns.length > 0 && (
+        <div className="mb-2 flex justify-end">
+          <button
+            onClick={async () => { await clearChat(); setTurns([]); setSessionId(undefined); }}
+            className="rounded-full border border-leaf-100 px-3 py-1 text-[11px] font-semibold text-soil-700 transition hover:bg-leaf-50"
+          >
+            {hi ? 'नई बातचीत' : 'New conversation'}
+          </button>
+        </div>
+      )}
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto pb-2">
         {turns.length === 0 && (
           <div className="rounded-2xl border border-dashed border-leaf-100 p-6 text-center">

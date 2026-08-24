@@ -137,8 +137,15 @@ export default function MandiProfitWidget({ lat, lon, crop, language }: Props) {
                 ].map((f) => (
                   <label key={f.k} className="text-[10px] text-soil-700/80">
                     {f.l}
-                    <input type="number" value={f.v} onChange={(e) => update(i, { [f.k]: Number(e.target.value) } as Partial<Row>)}
-                           className="mt-0.5 w-full rounded-md border border-leaf-50 px-1.5 py-1 text-xs outline-none focus:border-leaf-500" />
+                    <input
+                      type="number"
+                      value={f.v === 0 ? '' : f.v}
+                      placeholder="0"
+                      onChange={(e) =>
+                        update(i, { [f.k]: e.target.value === '' ? 0 : Number(e.target.value) } as Partial<Row>)
+                      }
+                      className="mt-0.5 w-full rounded-md border border-leaf-50 px-1.5 py-1 text-xs outline-none focus:border-leaf-500"
+                    />
                   </label>
                 ))}
               </div>

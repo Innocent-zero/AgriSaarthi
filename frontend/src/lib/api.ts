@@ -110,7 +110,11 @@ export function friendlyError(err: unknown): string {
   if (axios.isAxiosError(err)) {
     const ax = err as AxiosError<{ error?: string; detail?: string }>;
     if (ax.code === 'ECONNABORTED') return 'The network is slow right now. Please try again.';
-    if (!ax.response) return 'You appear to be offline. Saved data is being shown.';
+    if (!ax.response) {
+      return navigator.onLine
+        ? 'Could not reach the server. Check that the gateway is running on port 8080.'
+        : 'You are offline — showing your last saved data.';
+    }
     return ax.response.data?.error || ax.response.data?.detail || `Request failed (${ax.response.status}).`;
   }
   return err instanceof Error ? err.message : 'Something went wrong.';

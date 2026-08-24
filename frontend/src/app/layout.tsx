@@ -19,8 +19,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="hi">
-      <body className="min-h-screen">{children}</body>
+    <html lang="en" translate="no">
+      <head>
+        <meta name="google" content="notranslate" />
+      </head>
+      <body className="min-h-screen notranslate">{children}</body>
     </html>
   );
 }

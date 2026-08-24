@@ -105,7 +105,15 @@ export async function readAdvisory<T>(key: string, maxAgeMs = 21_600_000): Promi
 }
 
 // ── Chat history ──
-export async function appendChat(entry: { role: 'user' | 'assistant'; text: string; at: number }): Promise<void> {
+export interface ChatEntry {
+  id?: number;
+  role: 'user' | 'assistant';
+  text: string;
+  at: number;
+  actions?: unknown[];
+}
+
+export async function appendChat(entry: ChatEntry): Promise<void> {
   try {
     const d = await db();
     await d.add('chat', entry);
@@ -114,13 +122,22 @@ export async function appendChat(entry: { role: 'user' | 'assistant'; text: stri
   }
 }
 
-export async function recentChat(limit = 30): Promise<Array<{ role: 'user' | 'assistant'; text: string; at: number }>> {
+export async function recentChat(limit = 30): Promise<ChatEntry[]> {
   try {
     const d = await db();
-    const all = await d.getAll('chat');
+    const all = (await d.getAll('chat')) as ChatEntry[];
     return all.slice(-limit);
   } catch {
     return [];
+  }
+}
+
+export async function clearChat(): Promise<void> {
+  try {
+    const d = await db();
+    await d.clear('chat');
+  } catch (e) {
+    console.warn('[idb] clearChat failed', e);
   }
 }
 
