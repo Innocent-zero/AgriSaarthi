@@ -1,0 +1,129 @@
+# Render Blueprint — AgriSaarthi V1
+# Deploy: connect repo → New → Blueprint
+
+databases:
+  - name: agrisaarthi-db
+    databaseName: agrisaarthi
+    user: agri
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  # ── Redis cache ──
+  - type: redis
+    name: agrisaarthi-cache
+    plan: free
+    region: singapore
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+  # ── Python ML + Spatial Microservice (Docker) ──
+  - type: web
+    name: agrisaarthi-ml
+    runtime: docker
+    region: singapore
+    plan: starter
+    dockerfilePath: ./ml-microservice/Dockerfile
+    dockerContext: ./ml-microservice
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ML_SERVICE_PORT
+        value: "8000"
+      - key: SVM_MODEL_PATH
+        value: app/models/artifacts/leaf_svm.joblib
+      - key: PMFBY_ORG_NAME
+        value: AgriSaarthi Digital Advisory
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: TAVILY_BASE_URL
+        value: https://api.tavily.com
+      - key: ML_ALLOWED_ORIGINS
+        value: https://agrisaarthi-web.onrender.com,https://agrisaarthi-gateway.onrender.com
+
+  # ── Node/Express API Gateway (builds the C++ engine in the same step) ──
+  - type: web
+    name: agrisaarthi-gateway
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: >-
+      apt-get update -qq && apt-get install -y -qq cmake g++ &&
+      cd mandi-engine && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release &&
+      cmake --build build --config Release -j2 && cd ../backend-gateway &&
+      npm ci && npm run build
+    startCommand: cd backend-gateway && node dist/server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GATEWAY_PORT
+        value: "10000"
+      - key: MANDI_ENGINE_BIN
+        value: /opt/render/project/src/mandi-engine/build/mandi_router
+      - key: MANDI_ENGINE_TIMEOUT_MS
+        value: "5000"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGINS
+        value: https://agrisaarthi-web.onrender.com
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: agrisaarthi-cache
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: agrisaarthi-db
+          property: connectionString
+      - key: ML_SERVICE_URL
+        fromService:
+          type: web
+          name: agrisaarthi-ml
+          property: hostport
+      - key: LYZR_API_KEY
+        sync: false
+      - key: LYZR_AGENT_ID
+        sync: false
+      - key: LYZR_BASE_URL
+        value: https://agent-prod.studio.lyzr.ai/v3/inference/chat/
+      - key: SWYTCHCODE_API_KEY
+        sync: false
+      - key: SWYTCHCODE_BASE_URL
+        value: https://api.swytchcode.com/v1
+      - key: SWYTCHCODE_ENABLED
+        value: "true"
+      - key: N8N_WEBHOOK_SECRET
+        sync: false
+      - key: N8N_ALERT_DISPATCH_URL
+        sync: false
+      - key: DATA_GOV_IN_API_KEY
+        sync: false
+      - key: DATA_GOV_MANDI_RESOURCE
+        value: 9ef84268-d588-465a-a308-a864a43d0070
+
+  # ── Next.js 14 PWA ──
+  - type: web
+    name: agrisaarthi-web
+    runtime: node
+    region: singapore
+    plan: starter
+    buildCommand: cd frontend && npm ci && npm run build
+    startCommand: cd frontend && npm run start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: NEXT_PUBLIC_API_BASE
+        value: https://agrisaarthi-gateway.onrender.com/api/v1
+      - key: NEXT_PUBLIC_MAP_TILE_URL
+        value: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+      - key: NEXT_PUBLIC_DEFAULT_LAT
+        value: "26.8467"
+      - key: NEXT_PUBLIC_DEFAULT_LON
+        value: "80.9462"
