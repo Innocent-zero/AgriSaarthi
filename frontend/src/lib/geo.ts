@@ -24,7 +24,7 @@ export function polygonAreaSqM(points: LatLon[]): number {
   return Math.abs((total * R * R) / 2);
 }
 
-export function polygonAreaHa(points: LatLon[]): number {
+export function polygonAreaHectares(points: LatLon[]): number {
   return polygonAreaSqM(points) / 10_000;
 }
 

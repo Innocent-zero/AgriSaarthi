@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Leaf, ArrowRight, ArrowLeft, Crosshair, Check, Languages } from 'lucide-react';
 import { makeT, Locale } from '@/lib/i18n';
-import { polygonAreaHa, polygonCentroid, isPlausibleField, LatLon } from '@/lib/geo';
+import { polygonAreaHectares, polygonCentroid, isPlausibleField, LatLon } from '@/lib/geo';
 import 'leaflet/dist/leaflet.css';
 
 const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
@@ -77,7 +77,7 @@ export default function OnboardingFlow({ initial, onComplete, onCancel }: Props)
   const t = makeT(language);
   const tileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-  const areaHa = useMemo(() => polygonAreaHa(boundary), [boundary]);
+  const areaHa = useMemo(() => polygonAreaHectares(boundary), [boundary]);
   const valid = isPlausibleField(boundary);
 
   // Offer the device location on first entry to the map step.

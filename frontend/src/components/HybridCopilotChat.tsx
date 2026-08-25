@@ -71,7 +71,9 @@ function SchemeCard({ query, state, language }: { query: string; state?: string;
               {r.title}<ExternalLink size={11} className="mt-0.5 shrink-0" />
             </p>
             <p className="mt-1 line-clamp-2 text-[11px] text-soil-700">{r.snippet}</p>
-            <p className="mt-1 text-[10px] text-soil-700/60">{r.domain}</p>
+            <p className="mt-1 text-[10px] text-soil-700/60">
+              {r.domain}{r.official && ` · ${t('chat.scheme.officialSource')}`}
+            </p>
           </a>
         ))}
       </div>
@@ -148,6 +150,7 @@ export default function HybridCopilotChat({ farm, pendingMessage, onReply }: Pro
         return <NpkCalculatorWidget key={key} lat={farm.lat} lon={farm.lon}
                                     crop={String(p.crop ?? farm.crop)}
                                     areaHa={Number(p.areaHa ?? farm.areaHa)}
+                                    boundary={farm.boundary}
                                     language={farm.language} />;
       case 'leaf_diagnostic':
         return <LeafDiagnosticModal key={key} crop={farm.crop} language={farm.language} />;
