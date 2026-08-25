@@ -43,6 +43,6 @@ export function polygonCentroid(points: LatLon[]): LatLon | null {
 /** Guard against self-intersecting polygons drawn by tapping out of order. */
 export function isPlausibleField(points: LatLon[]): boolean {
   if (points.length < 3) return false;
-  const ha = polygonAreaHa(points);
+  const ha = polygonAreaHectares(points);
   return ha > 0.005 && ha < 5000;
 }

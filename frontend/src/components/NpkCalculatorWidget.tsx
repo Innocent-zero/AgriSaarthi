@@ -71,7 +71,11 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manualArea, setManualArea] = useState(areaHa || 1);
+  const [manualArea, setManualArea] = useState(areaHa || 1);
   const [targetYieldPct, setTargetYieldPct] = useState(100);
+  const [useBoundaryArea, setUseBoundaryArea] = useState(false);
+  const [showShc, setShowShc] = useState(false);
+  const [shc, setShc] = useState<ShcOverride>({});
   const [useBoundaryArea, setUseBoundaryArea] = useState(false);
   const [showShc, setShowShc] = useState(false);
   const [shc, setShc] = useState<ShcOverride>({});
@@ -92,7 +96,10 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
       setLoading(true);
       const key = `soil:${lat.toFixed(3)}:${lon.toFixed(3)}`;
       const cached = await readAdvisory<SoilSnapshot>(key, 30 * 24 * 3600 * 1000);
-      if (cached && alive) { setSoil(cached); setLoading(false); }
+      if (cached && alive) {
+        setSoil(cached);
+        setLoading(false);
+      }
       try {
         const fresh = await api.soil(lat, lon);
         if (!alive) return;
@@ -105,11 +112,14 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [lat, lon]);
 
   const plan = useMemo(() => {
     if (!soil) return null;
+
     const yieldFactor = targetYieldPct / 100;
     const targetN = base.n * yieldFactor;
     const targetP = base.p * yieldFactor;
@@ -144,8 +154,7 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
     const dapKg = (pHa / 0.46) * area;
     const nFromDap = dapKg * 0.18;
     const ureaKg = Math.max(0, (nHa * area - nFromDap) / 0.46);
-    const mopKg = (kHa / 0.60) * area;
-
+    const mopKg = (kHa / 0.6) * area;
     const cost = ureaKg * PRICE_PER_KG.urea + dapKg * PRICE_PER_KG.dap + mopKg * PRICE_PER_KG.mop;
 
     // Sandy soils drain fast → shorter, more frequent cycles.
@@ -175,9 +184,11 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
       </div>
     );
   }
+
   if (error && !soil) {
     return <div className="rounded-2xl border border-alert-400/40 bg-alert-400/5 p-4 text-sm text-alert-600">{error}</div>;
   }
+
   if (!soil || !plan) return null;
 
   const textureLabel = t(soil.textureCode);
@@ -262,8 +273,8 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
         <div className="grid grid-cols-3 gap-2">
           {[
             { k: 'N', v: plan.nHa, c: 'bg-leaf-600' },
-            { k: 'P₂O₅', v: plan.pHa, c: 'bg-harvest-500' },
-            { k: 'K₂O', v: plan.kHa, c: 'bg-soil-700' },
+            { k: 'P2O5', v: plan.pHa, c: 'bg-harvest-500' },
+            { k: 'K2O', v: plan.kHa, c: 'bg-soil-700' },
           ].map((n) => (
             <div key={n.k} className={`${n.c} rounded-xl p-3 text-center text-white`}>
               <p className="text-[11px] opacity-80">{n.k}</p>
@@ -327,7 +338,7 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
             <span className="flex items-center gap-1 text-xs font-medium text-soil-900">
               <IndianRupee size={13} /> {t('npk.estCost')}
             </span>
-            <span className="text-base font-bold text-soil-900">₹{plan.cost.toLocaleString('en-IN')}</span>
+            <span className="text-base font-bold text-soil-900">INR {plan.cost.toLocaleString('en-IN')}</span>
           </div>
           <p className="mt-1 text-right text-[9px] text-soil-700/50">{t('npk.pricesAsOf', { date: PRICE_AS_OF })}</p>
         </div>
