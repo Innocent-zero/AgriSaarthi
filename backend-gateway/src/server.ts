@@ -15,6 +15,7 @@ import axios from 'axios';
 
 import { initRedis, redisStatus, closeRedis } from './config/redis';
 import { engineHealth, MandiEngineError } from './services/mandiEngineBridge';
+import { lyzrAgent } from './services/lyzrAgent';
 import agentRoutes from './routes/agent.routes';
 import mandiRoutes from './routes/mandi.routes';
 import alertRoutes from './routes/alerts.routes';
@@ -65,17 +66,20 @@ app.use(
 );
 
 // ── Health ──
+
 app.get('/health', async (_req: Request, res: Response) => {
   const engine = await engineHealth();
   res.json({
     status: 'ok',
     service: 'agrisaarthi-gateway',
     version: '1.0.0-local',
-    mode: 'LOCAL — Lyzr and Swytchcode disabled',
     uptimeSeconds: Math.round(process.uptime()),
     redis: redisStatus(),
     mandiEngine: engine.available ? 'ready' : 'unavailable',
     integrations: {
+      lyzr: lyzrAgent.configured
+        ? `configured (${lyzrAgent.creditsRemaining} credits left)`
+        : 'local planner only',
       orchestrator: 'local rule-based planner',
       dataExecution: 'direct (Open-Meteo, SoilGrids)',
       mandiFeed: process.env.DATA_GOV_IN_API_KEY ? 'data.gov.in' : 'demo seed data',

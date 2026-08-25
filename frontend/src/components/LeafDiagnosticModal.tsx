@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Camera, Upload, X, Loader2, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Camera, Upload, X, Loader2, ShieldAlert, CheckCircle2,
+  SwitchCamera, Circle, RotateCcw,
+} from 'lucide-react';
 import { api, Diagnosis, friendlyError } from '@/lib/api';
 import { makeT, Locale } from '@/lib/i18n';
 
@@ -11,153 +14,177 @@ interface Props {
   onClose?: () => void;
 }
 
+type Mode = 'idle' | 'camera' | 'preview';
+
 const SEVERITY_STYLE: Record<string, string> = {
   none: 'bg-leaf-50 text-leaf-700 border-leaf-100',
   medium: 'bg-harvest-400/15 text-harvest-600 border-harvest-400/30',
   high: 'bg-alert-400/10 text-alert-600 border-alert-400/30',
 };
 
-// New camera-related strings live here directly — no i18n.ts change needed.
-const CAMERA_STRINGS: Record<Locale, { capture: string; cancel: string; cameraDenied: string }> = {
-  en: {
-    capture: 'Capture photo',
-    cancel: 'Cancel',
-    cameraDenied: "Couldn't access the camera. Check your browser's camera permission, or use Gallery instead.",
-  },
-  hi: {
-    capture: 'फ़ोटो लें',
-    cancel: 'रद्द करें',
-    cameraDenied: 'कैमरा एक्सेस नहीं हो पाया। ब्राउज़र की कैमरा अनुमति जाँचें, या गैलरी का उपयोग करें।',
-  },
-};
-
 export default function LeafDiagnosticModal({ crop, language, onClose }: Props) {
   const t = makeT(language);
-  const cs = CAMERA_STRINGS[language] ?? CAMERA_STRINGS.en;
 
+  const [mode, setMode] = useState<Mode>('idle');
   const [preview, setPreview] = useState<string | null>(null);
+  const [captured, setCaptured] = useState<Blob | null>(null);
   const [result, setResult] = useState<Diagnosis | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [camError, setCamError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [facing, setFacing] = useState<'environment' | 'user'>('environment');
+  const [hasMultipleCams, setHasMultipleCams] = useState(false);
 
-  // ── live camera state ──
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const cameraInputRef = useRef<HTMLInputElement>(null); // last-resort fallback only
+  const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
-  // Attach the stream to the <video> once it's mounted (it only mounts when cameraOpen is true).
-  useEffect(() => {
-    if (cameraOpen && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-      videoRef.current.play().catch(() => {
-        /* autoplay can reject on some browsers until user gesture settles; harmless */
-      });
-    }
-  }, [cameraOpen]);
+  const cameraSupported =
+    typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 
-  // Always release the camera if the component unmounts while the stream is open.
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-    };
-  }, []);
-
-  function stopStream() {
+  // ── stream lifecycle ──
+  const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-  }
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
 
-  async function openCamera() {
-    setCameraError(null);
-    setError(null);
-    setResult(null);
-    setNote(null);
-
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      // Very old / unsupported browser — fall back to the OS file picker as a last resort.
-      cameraInputRef.current?.click();
-      return;
-    }
+  const startCamera = useCallback(async (which: 'environment' | 'user' = facing) => {
+    setCamError(null);
+    setStarting(true);
+    stopCamera();
 
     try {
-      // Prefer the rear camera on phones.
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: which },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
       streamRef.current = stream;
-      setCameraOpen(true);
-    } catch (err) {
-      // Some devices reject a facingMode constraint outright — retry with any camera.
+      setMode('camera');
+
+      // The <video> element only exists after mode flips, so attach next tick.
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play().catch(() => { /* autoplay guard */ });
+        }
+      });
+
+      // Only offer the flip control when there really are two cameras.
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        streamRef.current = stream;
-        setCameraOpen(true);
-      } catch (err2) {
-        console.error(err2);
-        setCameraError(cs.cameraDenied);
-      }
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        setHasMultipleCams(devices.filter((d) => d.kind === 'videoinput').length > 1);
+      } catch { /* enumeration is optional */ }
+    } catch (err) {
+      const name = (err as Error).name;
+      setCamError(
+        name === 'NotAllowedError' || name === 'SecurityError'
+          ? t('dz.cameraDenied')
+          : name === 'NotFoundError' || name === 'OverconstrainedError'
+            ? t('dz.noCamera')
+            : t('dz.cameraFailed'),
+      );
+      setMode('idle');
+    } finally {
+      setStarting(false);
     }
-  }
+  }, [facing, stopCamera, t]);
 
-  function closeCamera() {
-    stopStream();
-    setCameraOpen(false);
-  }
+  const flipCamera = useCallback(() => {
+    const next = facing === 'environment' ? 'user' : 'environment';
+    setFacing(next);
+    void startCamera(next);
+  }, [facing, startCamera]);
 
-  function capturePhoto() {
+  // Release the camera and any object URL on unmount — otherwise the phone's
+  // camera LED stays on after the user navigates away.
+  useEffect(() => {
+    return () => {
+      stopCamera();
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, [stopCamera]);
+
+  // ── image helpers ──
+  const setPreviewFromBlob = useCallback((blob: Blob) => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const url = URL.createObjectURL(blob);
+    previewUrlRef.current = url;
+    setPreview(url);
+    setCaptured(blob);
+  }, []);
+
+  /** Centre-crop to a square and downscale — matches how the SVM was trained. */
+  const normalise = useCallback(
+    async (source: CanvasImageSource, w: number, h: number): Promise<Blob> => {
+      const side = Math.min(w, h);
+      const sx = (w - side) / 2;
+      const sy = (h - side) / 2;
+      const target = 720;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = target;
+      canvas.height = target;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.drawImage(source, sx, sy, side, side, 0, 0, target, target);
+
+      return new Promise((resolve, reject) =>
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error('Encode failed'))),
+          'image/jpeg',
+          0.85,
+        ),
+      );
+    },
+    [],
+  );
+
+  const capture = useCallback(async () => {
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || video.videoWidth === 0) return;
+    if (!video || !video.videoWidth) return;
+    try {
+      const blob = await normalise(video, video.videoWidth, video.videoHeight);
+      setPreviewFromBlob(blob);
+      stopCamera();
+      setMode('preview');
+      setResult(null);
+      setNote(null);
+      setError(null);
+    } catch (e) {
+      setCamError(friendlyError(e));
+    }
+  }, [normalise, setPreviewFromBlob, stopCamera]);
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) return;
-        const file = new File([blob], `leaf-${Date.now()}.jpg`, { type: 'image/jpeg' });
-        closeCamera();
-        handleFile(file);
-      },
-      'image/jpeg',
-      0.9,
-    );
-  }
-
-  /** Downscale on-device before upload — critical on 2G. */
-  async function compress(file: File): Promise<Blob> {
-    const bitmap = await createImageBitmap(file);
-    const maxDim = 720;
-    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return new Promise((resolve) => canvas.toBlob((b) => resolve(b ?? file), 'image/jpeg', 0.82));
-  }
-
-  async function handleFile(file: File | undefined) {
+  const handleFile = useCallback(async (file: File | undefined) => {
     if (!file) return;
     setError(null);
     setResult(null);
     setNote(null);
-    setPreview(URL.createObjectURL(file));
-    setBusy(true);
     try {
-      const blob = await compress(file);
-      const data = await api.diagnose(blob, crop, language);
+      const bitmap = await createImageBitmap(file);
+      const blob = await normalise(bitmap, bitmap.width, bitmap.height);
+      bitmap.close?.();
+      setPreviewFromBlob(blob);
+    } catch {
+      setPreviewFromBlob(file); // fall back to the raw file
+    }
+    setMode('preview');
+  }, [normalise, setPreviewFromBlob]);
+
+  const diagnose = useCallback(async () => {
+    if (!captured) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await api.diagnose(captured, crop, language);
       setResult(data.diagnosis);
       setNote(data.note ?? null);
     } catch (e) {
@@ -165,12 +192,18 @@ export default function LeafDiagnosticModal({ crop, language, onClose }: Props) 
     } finally {
       setBusy(false);
     }
-  }
+  }, [captured, crop, language]);
 
-  function handleModalClose() {
-    stopStream();
-    onClose?.();
-  }
+  const reset = useCallback(() => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = null;
+    setPreview(null);
+    setCaptured(null);
+    setResult(null);
+    setNote(null);
+    setError(null);
+    setMode('idle');
+  }, []);
 
   return (
     <div className="animate-slideUp overflow-hidden rounded-2xl border border-leaf-100 bg-white shadow-card">
@@ -180,73 +213,125 @@ export default function LeafDiagnosticModal({ crop, language, onClose }: Props) 
           <h3 className="text-sm font-semibold">{t('dz.title')}</h3>
         </div>
         {onClose && (
-          <button onClick={handleModalClose} aria-label="Close" className="rounded-lg p-1 hover:bg-white/10">
+          <button
+            onClick={() => { stopCamera(); onClose(); }}
+            aria-label="Close"
+            className="rounded-lg p-1 hover:bg-white/10"
+          >
             <X size={16} />
           </button>
         )}
       </div>
 
       <div className="p-4">
-        {!preview && !cameraOpen && (
+        {/* ── idle ── */}
+        {mode === 'idle' && (
           <div className="space-y-3">
             <p className="text-sm text-soil-700">{t('dz.instruction')}</p>
+
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={openCamera}
-                      className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-leaf-300 bg-leaf-50 p-6 text-leaf-700 transition hover:bg-leaf-100">
-                <Camera size={26} />
-                <span className="text-sm font-semibold">{t('dz.camera')}</span>
+              <button
+                onClick={() => (cameraSupported ? startCamera() : fileRef.current?.click())}
+                disabled={starting}
+                className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-leaf-300 bg-leaf-50 p-6 text-leaf-700 transition hover:bg-leaf-100 disabled:opacity-50"
+              >
+                {starting
+                  ? <Loader2 size={26} className="animate-spin" />
+                  : <Camera size={26} />}
+                <span className="text-sm font-semibold">
+                  {starting ? t('dz.cameraStarting') : t('dz.openCamera')}
+                </span>
               </button>
-              <button onClick={() => fileRef.current?.click()}
-                      className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-soil-100 bg-soil-50 p-6 text-soil-700 transition hover:bg-soil-100">
+
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-soil-100 bg-soil-50 p-6 text-soil-700 transition hover:bg-soil-100"
+              >
                 <Upload size={26} />
                 <span className="text-sm font-semibold">{t('dz.gallery')}</span>
               </button>
             </div>
-            {cameraError && (
-              <p className="rounded-xl bg-alert-400/10 p-3 text-sm text-alert-600">{cameraError}</p>
+
+            {camError && (
+              <p className="rounded-xl bg-harvest-400/12 p-3 text-xs text-harvest-600">{camError}</p>
             )}
+            <p className="text-[11px] leading-relaxed text-soil-700/70">{t('dz.tip')}</p>
           </div>
         )}
 
-        {cameraOpen && (
+        {/* ── live camera ── */}
+        {mode === 'camera' && (
           <div className="space-y-3">
             <div className="relative overflow-hidden rounded-xl bg-black">
-              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
               <video
                 ref={videoRef}
-                autoPlay
                 playsInline
                 muted
-                className="max-h-72 w-full object-cover"
+                autoPlay
+                className="h-72 w-full object-cover"
               />
+              {/* Square framing guide — matches the centre crop applied on capture. */}
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="aspect-square h-[85%] rounded-lg border-2 border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)]" />
+              </div>
+              <p className="absolute inset-x-0 bottom-2 text-center text-[11px] font-medium text-white drop-shadow">
+                {t('dz.frameHint')}
+              </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={closeCamera}
-                      className="rounded-xl border border-soil-100 py-2.5 text-sm font-semibold text-soil-700 transition hover:bg-soil-50">
-                {cs.cancel}
+
+            <div className="flex items-center justify-center gap-4">
+              <button
+                onClick={() => { stopCamera(); setMode('idle'); }}
+                className="rounded-xl border border-leaf-100 px-4 py-2.5 text-sm font-semibold text-soil-700"
+              >
+                {t('dz.cancel')}
               </button>
-              <button onClick={capturePhoto}
-                      className="flex items-center justify-center gap-2 rounded-xl bg-leaf-600 py-2.5 text-sm font-semibold text-white transition hover:bg-leaf-700">
-                <Camera size={16} />
-                {cs.capture}
+
+              <button
+                onClick={capture}
+                aria-label={t('dz.capture')}
+                className="flex h-16 w-16 items-center justify-center rounded-full bg-leaf-600 text-white shadow-card transition active:scale-95"
+              >
+                <Circle size={30} strokeWidth={2.5} />
               </button>
+
+              {hasMultipleCams ? (
+                <button
+                  onClick={flipCamera}
+                  aria-label={t('dz.switchCamera')}
+                  className="rounded-xl border border-leaf-100 p-2.5 text-soil-700"
+                >
+                  <SwitchCamera size={18} />
+                </button>
+              ) : (
+                <span className="w-[42px]" />
+              )}
             </div>
           </div>
         )}
 
-        {/* Hidden canvas used only to grab a frame from the live video */}
-        <canvas ref={canvasRef} className="hidden" />
-
-        {/* Fallback input — only used if getUserMedia isn't supported at all */}
-        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-               onChange={(e) => handleFile(e.target.files?.[0])} />
-        <input ref={fileRef} type="file" accept="image/*" className="hidden"
-               onChange={(e) => handleFile(e.target.files?.[0])} />
-
-        {preview && (
+        {/* ── preview + result ── */}
+        {mode === 'preview' && preview && (
           <div className="space-y-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="Leaf sample" className="max-h-56 w-full rounded-xl object-cover" />
+            <img src={preview} alt="Leaf sample" className="max-h-64 w-full rounded-xl object-cover" />
+
+            {!result && !busy && (
+              <div className="flex gap-3">
+                <button
+                  onClick={() => (cameraSupported ? startCamera() : reset())}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-leaf-100 px-4 py-3 text-sm font-semibold text-soil-700"
+                >
+                  <RotateCcw size={15} /> {t('dz.retake')}
+                </button>
+                <button
+                  onClick={diagnose}
+                  className="flex-1 rounded-xl bg-leaf-600 py-3 text-sm font-bold text-white transition hover:bg-leaf-700"
+                >
+                  {t('dz.usePhoto')}
+                </button>
+              </div>
+            )}
 
             {busy && (
               <div className="flex items-center justify-center gap-2 rounded-xl bg-leaf-50 py-4 text-sm text-leaf-700">
@@ -280,7 +365,9 @@ export default function LeafDiagnosticModal({ crop, language, onClose }: Props) 
                   </div>
                   <div className="rounded-lg bg-soil-50 p-2">
                     <p className="text-[10px] uppercase text-soil-700/70">{t('dz.cost')}</p>
-                    <p className="text-sm font-bold text-soil-900">₹{result.est_cost_inr_per_acre}/{t('common.acre')}</p>
+                    <p className="text-sm font-bold text-soil-900">
+                      ₹{result.est_cost_inr_per_acre}/{t('common.acre')}
+                    </p>
                   </div>
                 </div>
 
@@ -298,14 +385,24 @@ export default function LeafDiagnosticModal({ crop, language, onClose }: Props) 
                   </div>
                 )}
 
-                <button onClick={() => { setPreview(null); setResult(null); setNote(null); }}
-                        className="w-full rounded-xl border border-leaf-100 py-2.5 text-sm font-semibold text-leaf-700 transition hover:bg-leaf-50">
+                <button
+                  onClick={reset}
+                  className="w-full rounded-xl border border-leaf-100 py-2.5 text-sm font-semibold text-leaf-700 transition hover:bg-leaf-50"
+                >
                   {t('dz.another')}
                 </button>
               </div>
             )}
           </div>
         )}
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => { void handleFile(e.target.files?.[0]); e.target.value = ''; }}
+        />
       </div>
     </div>
   );
