@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, Upload, X, Loader2, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { api, Diagnosis, friendlyError } from '@/lib/api';
 import { makeT, Locale } from '@/lib/i18n';
@@ -17,15 +17,122 @@ const SEVERITY_STYLE: Record<string, string> = {
   high: 'bg-alert-400/10 text-alert-600 border-alert-400/30',
 };
 
+// New camera-related strings live here directly — no i18n.ts change needed.
+const CAMERA_STRINGS: Record<Locale, { capture: string; cancel: string; cameraDenied: string }> = {
+  en: {
+    capture: 'Capture photo',
+    cancel: 'Cancel',
+    cameraDenied: "Couldn't access the camera. Check your browser's camera permission, or use Gallery instead.",
+  },
+  hi: {
+    capture: 'फ़ोटो लें',
+    cancel: 'रद्द करें',
+    cameraDenied: 'कैमरा एक्सेस नहीं हो पाया। ब्राउज़र की कैमरा अनुमति जाँचें, या गैलरी का उपयोग करें।',
+  },
+};
+
 export default function LeafDiagnosticModal({ crop, language, onClose }: Props) {
   const t = makeT(language);
+  const cs = CAMERA_STRINGS[language] ?? CAMERA_STRINGS.en;
+
   const [preview, setPreview] = useState<string | null>(null);
   const [result, setResult] = useState<Diagnosis | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
+
+  // ── live camera state ──
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null); // last-resort fallback only
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Attach the stream to the <video> once it's mounted (it only mounts when cameraOpen is true).
+  useEffect(() => {
+    if (cameraOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {
+        /* autoplay can reject on some browsers until user gesture settles; harmless */
+      });
+    }
+  }, [cameraOpen]);
+
+  // Always release the camera if the component unmounts while the stream is open.
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  function stopStream() {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }
+
+  async function openCamera() {
+    setCameraError(null);
+    setError(null);
+    setResult(null);
+    setNote(null);
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      // Very old / unsupported browser — fall back to the OS file picker as a last resort.
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    try {
+      // Prefer the rear camera on phones.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+    } catch (err) {
+      // Some devices reject a facingMode constraint outright — retry with any camera.
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        streamRef.current = stream;
+        setCameraOpen(true);
+      } catch (err2) {
+        console.error(err2);
+        setCameraError(cs.cameraDenied);
+      }
+    }
+  }
+
+  function closeCamera() {
+    stopStream();
+    setCameraOpen(false);
+  }
+
+  function capturePhoto() {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.videoWidth === 0) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        const file = new File([blob], `leaf-${Date.now()}.jpg`, { type: 'image/jpeg' });
+        closeCamera();
+        handleFile(file);
+      },
+      'image/jpeg',
+      0.9,
+    );
+  }
 
   /** Downscale on-device before upload — critical on 2G. */
   async function compress(file: File): Promise<Blob> {
@@ -60,6 +167,11 @@ export default function LeafDiagnosticModal({ crop, language, onClose }: Props) 
     }
   }
 
+  function handleModalClose() {
+    stopStream();
+    onClose?.();
+  }
+
   return (
     <div className="animate-slideUp overflow-hidden rounded-2xl border border-leaf-100 bg-white shadow-card">
       <div className="flex items-center justify-between bg-soil-900 px-4 py-3 text-white">
@@ -68,18 +180,18 @@ export default function LeafDiagnosticModal({ crop, language, onClose }: Props) 
           <h3 className="text-sm font-semibold">{t('dz.title')}</h3>
         </div>
         {onClose && (
-          <button onClick={onClose} aria-label="Close" className="rounded-lg p-1 hover:bg-white/10">
+          <button onClick={handleModalClose} aria-label="Close" className="rounded-lg p-1 hover:bg-white/10">
             <X size={16} />
           </button>
         )}
       </div>
 
       <div className="p-4">
-        {!preview && (
+        {!preview && !cameraOpen && (
           <div className="space-y-3">
             <p className="text-sm text-soil-700">{t('dz.instruction')}</p>
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => cameraRef.current?.click()}
+              <button onClick={openCamera}
                       className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-leaf-300 bg-leaf-50 p-6 text-leaf-700 transition hover:bg-leaf-100">
                 <Camera size={26} />
                 <span className="text-sm font-semibold">{t('dz.camera')}</span>
@@ -90,10 +202,43 @@ export default function LeafDiagnosticModal({ crop, language, onClose }: Props) 
                 <span className="text-sm font-semibold">{t('dz.gallery')}</span>
               </button>
             </div>
+            {cameraError && (
+              <p className="rounded-xl bg-alert-400/10 p-3 text-sm text-alert-600">{cameraError}</p>
+            )}
           </div>
         )}
 
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+        {cameraOpen && (
+          <div className="space-y-3">
+            <div className="relative overflow-hidden rounded-xl bg-black">
+              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="max-h-72 w-full object-cover"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={closeCamera}
+                      className="rounded-xl border border-soil-100 py-2.5 text-sm font-semibold text-soil-700 transition hover:bg-soil-50">
+                {cs.cancel}
+              </button>
+              <button onClick={capturePhoto}
+                      className="flex items-center justify-center gap-2 rounded-xl bg-leaf-600 py-2.5 text-sm font-semibold text-white transition hover:bg-leaf-700">
+                <Camera size={16} />
+                {cs.capture}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden canvas used only to grab a frame from the live video */}
+        <canvas ref={canvasRef} className="hidden" />
+
+        {/* Fallback input — only used if getUserMedia isn't supported at all */}
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
                onChange={(e) => handleFile(e.target.files?.[0])} />
         <input ref={fileRef} type="file" accept="image/*" className="hidden"
                onChange={(e) => handleFile(e.target.files?.[0])} />
