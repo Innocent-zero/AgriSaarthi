@@ -11,6 +11,11 @@
 import axios from 'axios';
 import { withCache } from '../config/redis';
 
+export interface Localised {
+  code: string;
+  params?: Record<string, string | number>;
+}
+
 export interface WeatherSnapshot {
   latitude: number;
   longitude: number;
@@ -29,7 +34,7 @@ export interface WeatherSnapshot {
     rainProbPct: number;
     windMaxKmh: number;
   }>;
-  advisories: string[];
+  advisories: Localised[];
   source: 'open-meteo';
 }
 
@@ -178,8 +183,12 @@ class DataExecutionService {
   }
 
   /** Raw metrics → operational instructions with a financial consequence. */
-  private deriveAdvisories(w: WeatherSnapshot): string[] {
-    const out: string[] = [];
+  /**
+   * Emits translation CODES, never prose. The client renders them in the
+   * farmer's language — this is why advisories translate correctly.
+   */
+  private deriveAdvisories(w: WeatherSnapshot): Localised[] {
+    const out: Localised[] = [];
     const next48 = w.daily.slice(0, 2);
     const rain48 = next48.reduce((s, d) => s + d.rainMm, 0);
     const maxProb48 = Math.max(0, ...next48.map((d) => d.rainProbPct));
@@ -187,25 +196,22 @@ class DataExecutionService {
     const maxTemp = Math.max(0, ...w.daily.slice(0, 3).map((d) => d.tMaxC));
 
     if (rain48 >= 10 || maxProb48 >= 70) {
-      out.push(
-        `Delay urea and foliar spraying by 48 hours — ${rain48.toFixed(0)} mm rain expected, nutrients will wash off and the spend is lost.`,
-      );
-      out.push('Skip the next irrigation cycle; the field will hold enough moisture.');
+      out.push({ code: 'wx.delayUrea', params: { rain: rain48.toFixed(0) } });
+      out.push({ code: 'wx.skipIrrigation' });
     } else if (rain48 < 2 && maxTemp > 35) {
-      out.push('No effective rain and high evapotranspiration — irrigate early morning or after 5 PM to cut evaporation loss.');
+      out.push({ code: 'wx.irrigateEarly' });
     }
-
     if (maxWind >= 25) {
-      out.push(`Wind up to ${maxWind.toFixed(0)} km/h — do not spray, drift will waste chemical and burn neighbouring plots.`);
+      out.push({ code: 'wx.windNoSpray', params: { wind: maxWind.toFixed(0) } });
     }
     if (w.current.humidityPct >= 80 && w.current.temperatureC >= 22 && w.current.temperatureC <= 32) {
-      out.push('Humidity above 80% with warm temperatures — high fungal blight risk. Scout leaves and keep a protectant fungicide ready.');
+      out.push({ code: 'wx.blightRisk' });
     }
     if (maxTemp >= 40) {
-      out.push('Heat stress window ahead — apply a light irrigation at flowering to protect grain filling.');
+      out.push({ code: 'wx.heatStress' });
     }
     if (out.length === 0) {
-      out.push('Weather is stable for the next 48 hours — a good window for spraying, top-dressing or harvesting.');
+      out.push({ code: 'wx.stable' });
     }
     return out;
   }
@@ -289,11 +295,11 @@ class DataExecutionService {
   }
 
   private classifyTexture(sand: number, clay: number): string {
-    if (clay >= 40) return 'Clay (bhari mitti)';
-    if (sand >= 70) return 'Sandy (balui mitti)';
-    if (clay >= 27) return 'Clay loam';
-    if (sand >= 52) return 'Sandy loam';
-    return 'Loam (domat mitti)';
+    if (clay >= 40) return 'soil.clay';
+    if (sand >= 70) return 'soil.sandy';
+    if (clay >= 27) return 'soil.clayLoam';
+    if (sand >= 52) return 'soil.sandyLoam';
+    return 'soil.loam';
   }
 
   // ─────────────────────────── Mandi prices ───────────────────────────

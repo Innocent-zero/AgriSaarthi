@@ -525,13 +525,13 @@ int main(int argc, char** argv) {
 
         for (auto& r : results) {
             if (!r.viable) {
-                r.verdict = "Loss-making after transport — do not travel.";
+                r.verdict = "mandi.verdict.loss";
             } else if (localGross > 0.0 && r.net <= localGross) {
-                r.verdict = "Local sale is better — staying home earns more.";
+                r.verdict = "mandi.verdict.localBetter";
             } else if (std::fabs(r.net - bestNet) < 0.005) {
-                r.verdict = "Best net realisation — recommended.";
+                r.verdict = "mandi.verdict.best";
             } else {
-                r.verdict = "Profitable, but a better option exists.";
+                r.verdict = "mandi.verdict.ok";
             }
         }
 
@@ -571,7 +571,7 @@ int main(int argc, char** argv) {
                 << ",\"netPerQuintal\":" << json::num(r.netPerQuintal)
                 << ",\"roundTripHours\":" << json::num(r.travelHoursRT, 1)
                 << ",\"viable\":" << (r.viable ? "true" : "false")
-                << ",\"verdict\":\"" << json::escape(r.verdict) << "\"}";
+                << ",\"verdictCode\":\"" << json::escape(r.verdict) << "\"}";
         }
         out << "],";
 

@@ -13,6 +13,7 @@ export interface FarmProfile {
   lon: number;
   crop: string;
   areaHa: number;
+  boundary?: Array<{ lat: number; lon: number }>;
   state?: string;
   district?: string;
   village?: string;
@@ -112,6 +113,7 @@ export interface ChatEntry {
   at: number;
   actions?: unknown[];
 }
+
 
 export async function appendChat(entry: ChatEntry): Promise<void> {
   try {

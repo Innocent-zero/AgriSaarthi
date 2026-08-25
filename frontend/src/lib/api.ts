@@ -22,7 +22,7 @@ export interface WeatherSnapshot {
   longitude: number;
   current: { temperatureC: number; humidityPct: number; windSpeedKmh: number; precipitationMm: number; weatherCode: number };
   daily: Array<{ date: string; tMaxC: number; tMinC: number; rainMm: number; rainProbPct: number; windMaxKmh: number }>;
-  advisories: string[];
+  advisories: Localised[];
   source: string;
 }
 
@@ -34,7 +34,7 @@ export interface SoilSnapshot {
   sandPct: number;
   siltPct: number;
   cecCmolKg: number;
-  texture: string;
+  textureCode: string;
 }
 
 export interface MandiRow {
@@ -55,7 +55,7 @@ export interface MandiRow {
   netPerQuintal: number;
   roundTripHours: number;
   viable: boolean;
-  verdict: string;
+  verdictCode: string;
 }
 
 export interface MandiResponse {
@@ -65,6 +65,33 @@ export interface MandiResponse {
   spreadVsWorst: number;
   localBaseline: { pricePerQuintal: number; netProfit: number; upliftIfTravel: number; travelRecommended: boolean } | null;
   assumptions: Record<string, number>;
+}
+
+export interface Localised {
+  code: string;
+  params?: Record<string, string | number>;
+}
+
+export interface RiskFactor {
+  key: string;
+  score: number;
+  band: 'low' | 'moderate' | 'high' | 'severe';
+  detail: Localised;
+}
+
+export interface RiskAssessment {
+  overall: number;
+  overallBand: 'low' | 'moderate' | 'high' | 'severe';
+  factors: RiskFactor[];
+  actions: Localised[];
+  context: {
+    rain7Mm: number;
+    maxTempC: number;
+    maxWindKmh: number;
+    humidityPct: number;
+    textureCode: string;
+    priceSpreadPct: number;
+  };
 }
 
 export interface Diagnosis {
@@ -159,7 +186,12 @@ export const api = {
     );
     return data;
   },
-
+  async risk(lat: number, lon: number, crop?: string, state?: string) {
+    const { data } = await client.get<{ success: boolean } & RiskAssessment>('/risk/assess', {
+      params: { lat, lon, crop, state },
+    });
+    return data as RiskAssessment;
+  },
   async schemes(query: string, state?: string, language: 'hi' | 'en' = 'hi') {
     const { data } = await client.post<SchemeAnswer>('/data/schemes', { query, state, language });
     return data;
