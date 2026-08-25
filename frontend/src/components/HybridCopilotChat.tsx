@@ -250,6 +250,7 @@ export default function HybridCopilotChat({ farm, pendingMessage, onReply }: Pro
           <NpkCalculatorWidget key={key} lat={farm.lat} lon={farm.lon}
                                crop={String(p.crop ?? farm.crop)}
                                areaHa={Number(p.areaHa ?? farm.areaHa)}
+                               boundary={farm.boundary}
                                language={farm.language} />
         );
       case 'leaf_diagnostic':
