@@ -71,11 +71,7 @@ export default function NpkCalculatorWidget({ lat, lon, crop, areaHa, boundary, 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manualArea, setManualArea] = useState(areaHa || 1);
-  const [manualArea, setManualArea] = useState(areaHa || 1);
   const [targetYieldPct, setTargetYieldPct] = useState(100);
-  const [useBoundaryArea, setUseBoundaryArea] = useState(false);
-  const [showShc, setShowShc] = useState(false);
-  const [shc, setShc] = useState<ShcOverride>({});
   const [useBoundaryArea, setUseBoundaryArea] = useState(false);
   const [showShc, setShowShc] = useState(false);
   const [shc, setShc] = useState<ShcOverride>({});
