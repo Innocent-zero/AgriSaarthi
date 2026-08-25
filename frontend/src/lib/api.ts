@@ -3,7 +3,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080/api/v1';
 
 export interface AgentAction {
-  widget: 'weather_card' | 'npk_calculator' | 'leaf_diagnostic' | 'mandi_profit' | 'pmfby_report' | 'scheme_results';
+  widget: 'weather_card' | 'npk_calculator' | 'leaf_diagnostic' | 'mandi_profit' | 'pmfby_report' | 'scheme_results' | 'farm_risk';
   reason: string;
   params: Record<string, unknown>;
 }
@@ -36,6 +36,17 @@ export interface SoilSnapshot {
   cecCmolKg: number;
   textureCode: string;
 }
+
+export interface NdviObservation {
+  from: string;
+  to: string;
+  mean: number;
+  min: number;
+  max: number;
+  stDev: number;
+  validPixelPct: number;
+}
+
 
 export interface MandiRow {
   rank: number;
@@ -76,7 +87,9 @@ export interface RiskFactor {
   key: string;
   score: number;
   band: 'low' | 'moderate' | 'high' | 'severe';
+  weight: number;
   detail: Localised;
+  evidence?: string;
 }
 
 export interface RiskAssessment {
@@ -84,6 +97,18 @@ export interface RiskAssessment {
   overallBand: 'low' | 'moderate' | 'high' | 'severe';
   factors: RiskFactor[];
   actions: Localised[];
+  ndvi: {
+    available: boolean;
+    reason?: string;
+    current: NdviObservation | null;
+    baselineMean: number | null;
+    anomaly: number | null;
+    anomalyZ: number | null;
+    trendPerInterval: number | null;
+    dropFromPeakPct: number | null;
+    seasonPeak: NdviObservation | null;
+    sparkline: Array<{ date: string; mean: number; validPixelPct: number }>;
+  };
   context: {
     rain7Mm: number;
     maxTempC: number;
@@ -186,12 +211,28 @@ export const api = {
     );
     return data;
   },
-  async risk(lat: number, lon: number, crop?: string, state?: string) {
-    const { data } = await client.get<{ success: boolean } & RiskAssessment>('/risk/assess', {
-      params: { lat, lon, crop, state },
-    });
+
+  async risk(payload: {
+    lat: number; lon: number; crop?: string; state?: string;
+    boundary?: Array<{ lat: number; lon: number }>;
+  }) {
+    const { data } = await client.post<{ success: boolean } & RiskAssessment>('/risk/assess', payload);
     return data as RiskAssessment;
   },
+
+  async ndviEvent(payload: {
+    lat: number; lon: number; eventDate: string;
+    boundary?: Array<{ lat: number; lon: number }>;
+  }) {
+    const { data } = await client.post<{
+      success: boolean;
+      pre: NdviObservation | null;
+      post: NdviObservation | null;
+      lossPct: number | null;
+    }>('/data/ndvi/event', payload);
+    return data;
+  },
+
   async schemes(query: string, state?: string, language: 'hi' | 'en' = 'hi') {
     const { data } = await client.post<SchemeAnswer>('/data/schemes', { query, state, language });
     return data;

@@ -127,7 +127,9 @@ export default function Home() {
       case 'mandi':   return <MandiProfitWidget lat={farm.lat} lon={farm.lon} crop={farm.crop} language={language} />;
       case 'disease': return <LeafDiagnosticModal crop={farm.crop} language={language} />;
       case 'pmfby':   return <PmfbyReportDownload {...farm} language={language} />;
-      case 'risk':    return <FarmRiskWidget lat={farm.lat} lon={farm.lon} crop={farm.crop} state={farm.state} language={language} />;
+      case 'risk':
+        return <FarmRiskWidget lat={farm.lat} lon={farm.lon} crop={farm.crop}
+                               state={farm.state} boundary={farm.boundary} language={language} />;
       case 'chat':    return <HybridCopilotChat farm={farm} pendingMessage={pending} onReply={setLastReply} />;
       default:        return null;
     }

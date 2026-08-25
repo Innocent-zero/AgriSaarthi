@@ -10,6 +10,7 @@
  */
 import axios from 'axios';
 import { withCache } from '../config/redis';
+import { sentinelHub, NdviAnalysis, LatLon } from './sentinelHubServices';
 
 export interface Localised {
   code: string;
@@ -127,7 +128,7 @@ class DataExecutionService {
   // ─────────────────────────── Weather ───────────────────────────
   async getWeather(lat: number, lon: number): Promise<WeatherSnapshot> {
     const ttl = Number(process.env.CACHE_TTL_WEATHER || 1800);
-    const key = `wx:${lat.toFixed(3)}:${lon.toFixed(3)}`;
+    const key = `wx:     ${lat.toFixed(3)}:${lon.toFixed(3)}`;
     const { data } = await withCache<WeatherSnapshot>(key, ttl, async () => {
       const raw = await this.fetchOpenMeteo(lat, lon);
       return this.normaliseWeather(raw, lat, lon);
@@ -300,6 +301,16 @@ class DataExecutionService {
     if (clay >= 27) return 'soil.clayLoam';
     if (sand >= 52) return 'soil.sandyLoam';
     return 'soil.loam';
+  }
+
+  // ─────────────────────────── Satellite NDVI ───────────────────────────
+  /**
+   * Delegated to Sentinel Hub. Kept on this facade so every external data
+   * source is reached through one object — when Swytchcode access arrives,
+   * only the body of this method changes.
+   */
+  async getNdvi(centre: LatLon, boundary?: LatLon[]): Promise<NdviAnalysis> {
+    return sentinelHub.getNdviAnalysis(centre, boundary);
   }
 
   // ─────────────────────────── Mandi prices ───────────────────────────

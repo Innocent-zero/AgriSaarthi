@@ -39,7 +39,27 @@ export default function PmfbyReportDownload({
   const [done, setDone] = useState(false);
 
   const lossPct = preNdvi > 0 ? Math.max(0, ((preNdvi - postNdvi) / preNdvi) * 100) : 0;
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoNote, setAutoNote] = useState<string | null>(null);
 
+  async function autofillNdvi() {
+    setAutoBusy(true);
+    setAutoNote(null);
+    try {
+      const r = await api.ndviEvent({ lat, lon, eventDate, boundary });
+      if (r.pre && r.post) {
+        setPreNdvi(Number(r.pre.mean.toFixed(3)));
+        setPostNdvi(Number(r.post.mean.toFixed(3)));
+        setAutoNote(t('pmfby.autofillOk'));
+      } else {
+        setAutoNote(t('pmfby.autofillFail'));
+      }
+    } catch {
+      setAutoNote(t('pmfby.autofillFail'));
+    } finally {
+      setAutoBusy(false);
+    }
+  }
   async function generate() {
     setBusy(true);
     setError(null);
@@ -123,6 +143,14 @@ export default function PmfbyReportDownload({
           <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-leaf-700">
             <Satellite size={13} /> {t('pmfby.ndvi')}
           </p>
+
+          <button onClick={autofillNdvi} disabled={autoBusy}
+                  className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-leaf-300 bg-white py-2 text-[11px] font-semibold text-leaf-700 disabled:opacity-50">
+            {autoBusy ? <Loader2 size={12} className="animate-spin" /> : <Satellite size={12} />}
+            {autoBusy ? t('pmfby.autofilling') : t('pmfby.autofill')}
+          </button>
+          {autoNote && <p className="mb-2 text-[10px] text-soil-700">{autoNote}</p>}
+
           <div className="grid grid-cols-2 gap-3">
             {[
               { l: t('pmfby.pre'), v: preNdvi, s: setPreNdvi },
@@ -151,7 +179,6 @@ export default function PmfbyReportDownload({
                     placeholder={t('pmfby.descPh')}
                     className="mt-1 w-full resize-none rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500" />
         </label>
-
         <button onClick={generate} disabled={busy}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-soil-900 py-3 text-sm font-bold text-white transition hover:bg-black disabled:opacity-50">
           {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
