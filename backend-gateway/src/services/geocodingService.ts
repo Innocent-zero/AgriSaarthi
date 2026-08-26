@@ -123,14 +123,24 @@ class GeocodingService {
     const hit = await cacheGet<ForwardResult>(key);
     if (hit) return hit;
 
-    const cleaned = market
-      .replace(/\b(apmc|mandi samiti|mandi|market|yard|krishi upaj)\b/gi, ' ')
+    // AGMARKNET names carry administrative suffixes OSM does not use, and
+    // often a parenthetical alias: "Hargaon (Laharpur) APMC". The town name
+    // underneath is what OSM actually has, so try that first.
+    const paren = market.match(/\(([^)]+)\)/)?.[1]?.trim();
+    const bare = market
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\b(apmc|mandi samiti|mandi|market|yard|krishi upaj|f&v|grain)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
-    const attempts: Array<{ q: string; precision: GeocodePrecision }> = [
-      { q: [market, district, state, 'India'].filter(Boolean).join(', '), precision: 'market' },
-    ];
+    const attempts: Array<{ q: string; precision: GeocodePrecision }> = [];
+    if (bare) {
+      attempts.push({ q: [bare, district, state, 'India'].filter(Boolean).join(', '), precision: 'market' });
+    }
+    if (paren) {
+      attempts.push({ q: [paren, district, state, 'India'].filter(Boolean).join(', '), precision: 'market' });
+    }
+    attempts.push({ q: [market, district, state, 'India'].filter(Boolean).join(', '), precision: 'market' });
     if (district) {
       attempts.push({ q: [district, state, 'India'].filter(Boolean).join(', '), precision: 'district' });
     }
@@ -159,7 +169,6 @@ class GeocodingService {
         /* try the next formulation */
       }
     }
-
     const miss: ForwardResult = { lat: 0, lon: 0, precision: 'none' };
     // Short TTL on misses so a transient outage does not poison the cache.
     await cacheSet(key, miss, 3600);

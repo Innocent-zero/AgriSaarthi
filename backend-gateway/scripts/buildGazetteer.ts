@@ -77,10 +77,24 @@ async function harvest(): Promise<Map<string, { market: string; district: string
 }
 
 async function geocode(market: string, district: string, state: string): Promise<Entry | null> {
-  const attempts: Array<{ q: string; precision: 'market' | 'district' }> = [
-    { q: `${market}, ${district}, ${state}, India`, precision: 'market' },
-    { q: `${district}, ${state}, India`, precision: 'district' },
-  ];
+  const paren = market.match(/\(([^)]+)\)/)?.[1]?.trim();
+  const bare = market
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\b(apmc|mandi samiti|mandi|market|yard|krishi upaj|f&v|grain|anaj|new|old)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const attempts: Array<{ q: string; precision: 'market' | 'district' }> = [];
+  if (bare) {
+    attempts.push({ q: `${bare}, ${district}, ${state}, India`, precision: 'market' });
+  }
+  if (paren) {
+    attempts.push({ q: `${paren}, ${district}, ${state}, India`, precision: 'market' });
+  }
+  attempts.push({ q: `${market}, ${district}, ${state}, India`, precision: 'market' });
+  if (district) {
+    attempts.push({ q: `${district}, ${state}, India`, precision: 'district' });
+  }
 
   for (const a of attempts) {
     try {
@@ -89,12 +103,22 @@ async function geocode(market: string, district: string, state: string): Promise
         headers: { 'User-Agent': process.env.NOMINATIM_USER_AGENT || 'AgriSaarthi/1.0' },
         timeout: 15000,
       });
+
       const hit = Array.isArray(data) ? data[0] : null;
-      if (hit && Number.isFinite(Number(hit.lat))) {
-        return { market, district, state, lat: Number(hit.lat), lon: Number(hit.lon), precision: a.precision };
+      if (hit) {
+        const lat = Number(hit.lat);
+        const lon = Number(hit.lon);
+        // India's mainland bounding box. A match outside it means Nominatim
+        // latched onto a same-named place elsewhere, which would be worse
+        // than falling through to the district centroid.
+        if (Number.isFinite(lat) && Number.isFinite(lon)
+            && lat > 6 && lat < 37 && lon > 68 && lon < 98) {
+          return { market, district, state, lat, lon, precision: a.precision };
+        }
       }
-    } catch { /* next attempt */ }
-    await sleep(1100);
+    } catch { /* next formulation */ }
+
+    await sleep(1100);   // Nominatim policy: one request per second
   }
   return null;
 }
@@ -115,7 +139,10 @@ async function main() {
     const e = await geocode(meta.market, meta.district, meta.state);
     if (e) entries.push(e);
     i += 1;
-    if (i % 20 === 0) console.log(`  ${i}/${markets.size} — ${entries.length} located`);
+    if (i % 20 === 0) {
+      const exact = entries.filter((e) => e.precision === 'market').length;
+      console.log(`  ${i}/${markets.size} — ${entries.length} located (${exact} exact)`);
+    }
     await sleep(1100);
   }
 
