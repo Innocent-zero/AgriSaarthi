@@ -1,14 +1,19 @@
 'use client';
 
-import { useState } from 'react';
-import { TrendingUp, Truck, Plus, Trash2, Loader2, IndianRupee } from 'lucide-react';
-import { api, MandiResponse, friendlyError } from '@/lib/api';
+import { useEffect, useState } from 'react';
+import {
+  TrendingUp, Truck, Plus, Trash2, Loader2, IndianRupee,
+  MapPin, RefreshCw, Pencil, AlertTriangle,
+} from 'lucide-react';
+import { api, MandiResponse, MandiAutoResult, friendlyError } from '@/lib/api';
 import { makeT, Locale } from '@/lib/i18n';
 
 interface Props {
   lat: number;
   lon: number;
   crop: string;
+  state?: string;
+  district?: string;
   language: Locale;
 }
 
@@ -22,28 +27,71 @@ interface Row {
 
 const EMPTY: Row = { name: '', distanceKm: 0, pricePerQuintal: 0, handlingFee: 150, commissionPct: 1.5 };
 
-export default function MandiProfitWidget({ lat, lon, crop, language }: Props) {
+export default function MandiProfitWidget({ lat, lon, crop, state, district, language }: Props) {
   const t = makeT(language);
+
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto');
   const [volume, setVolume] = useState(40);
   const [localPrice, setLocalPrice] = useState(0);
+  const [radiusKm, setRadiusKm] = useState(120);
   const [kmpl, setKmpl] = useState(8);
   const [fuelPrice, setFuelPrice] = useState(94.5);
   const [capacity, setCapacity] = useState(40);
+
+  const [auto, setAuto] = useState<MandiAutoResult | null>(null);
   const [rows, setRows] = useState<Row[]>([{ ...EMPTY }, { ...EMPTY }]);
   const [result, setResult] = useState<MandiResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const update = (i: number, patch: Partial<Row>) =>
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  const numVal = (n: number) => (n === 0 ? '' : n);
 
-  async function calculate() {
+  // Run discovery as soon as the widget mounts — the farmer should see live
+  // mandis without pressing anything.
+  useEffect(() => {
+    if (mode === 'auto') void runAuto();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function runAuto() {
+    setBusy(true);
+    setError(null);
+    try {
+      const d = await api.mandiAuto({
+        lat, lon, crop,
+        volumeQuintals: volume,
+        radiusKm,
+        localPricePerQuintal: localPrice > 0 ? localPrice : undefined,
+        state, district,
+        vehicle: { kmpl, fuelPricePerLitre: fuelPrice, capacityQuintals: capacity },
+      });
+      setAuto(d);
+      setResult(d.ranking ?? null);
+
+      // Seed the manual editor from what was discovered, so switching to
+      // manual is a correction rather than starting from a blank form.
+      if (d.discovered.length) {
+        setRows(d.discovered.map((m) => ({
+          name: m.name,
+          distanceKm: m.distanceKm,
+          pricePerQuintal: m.pricePerQuintal,
+          handlingFee: 150,
+          commissionPct: 1.5,
+        })));
+      }
+    } catch (e) {
+      setError(friendlyError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runManual() {
     setError(null);
     const valid = rows.filter((r) => r.name.trim() && r.pricePerQuintal > 0);
-    if (valid.length === 0) {
-      setError(t('mandi.needOne'));
-      return;
-    }
+    if (valid.length === 0) { setError(t('mandi.needOne')); return; }
+
     setBusy(true);
     try {
       const data = await api.optimizeMandi({
@@ -69,38 +117,77 @@ export default function MandiProfitWidget({ lat, lon, crop, language }: Props) {
     }
   }
 
-  const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
-  // Controlled number inputs seeded at 0 keep stale strings like "035";
-  // rendering '' for zero and parsing '' back to 0 avoids that.
-  const numVal = (n: number) => (n === 0 ? '' : n);
+  const update = (i: number, patch: Partial<Row>) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   return (
     <div className="animate-slideUp overflow-hidden rounded-2xl border border-leaf-100 bg-white shadow-card">
       <div className="flex items-center gap-2 bg-harvest-500 px-4 py-3 text-white">
         <TrendingUp size={18} />
         <h3 className="text-sm font-semibold">{t('mandi.title')}</h3>
+        <button
+          onClick={() => setMode(mode === 'auto' ? 'manual' : 'auto')}
+          className="ml-auto flex items-center gap-1 rounded-lg bg-white/20 px-2 py-1 text-[10px] font-semibold"
+        >
+          <Pencil size={11} />
+          {mode === 'auto' ? t('mandi.editManually') : t('mandi.backToAuto')}
+        </button>
       </div>
 
+      {/* location banner */}
+      {auto?.location?.state && (
+        <div className="flex items-center gap-1.5 border-b border-leaf-50 bg-leaf-50 px-4 py-2 text-[11px] text-leaf-700">
+          <MapPin size={12} />
+          {[auto.location.village, auto.location.district, auto.location.state]
+            .filter(Boolean).join(' · ')}
+          {auto.feedSource === 'demo-seed' && (
+            <span className="ml-auto rounded-full bg-harvest-400/20 px-2 py-0.5 text-[9px] font-semibold text-harvest-600">
+              {t('mandi.demoData')}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="space-y-4 p-4">
+        {/* inputs the farmer must supply */}
         <div className="grid grid-cols-2 gap-3">
           <label className="text-xs font-medium text-soil-700">
             {t('mandi.volume')}
             <input type="number" min={1} value={numVal(volume)} placeholder="0"
                    onChange={(e) => setVolume(e.target.value === '' ? 0 : Number(e.target.value))}
-                   className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm text-soil-900 outline-none focus:border-leaf-500" />
+                   className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500" />
           </label>
           <label className="text-xs font-medium text-soil-700">
             {t('mandi.localOffer')}
             <input type="number" min={0} value={numVal(localPrice)} placeholder="0"
                    onChange={(e) => setLocalPrice(e.target.value === '' ? 0 : Number(e.target.value))}
-                   className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm text-soil-900 outline-none focus:border-leaf-500" />
+                   className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500" />
           </label>
         </div>
 
+        {mode === 'auto' && (
+          <>
+            <div>
+              <label className="mb-1 flex justify-between text-xs font-medium text-soil-700">
+                <span>{t('mandi.radius')}</span>
+                <span className="font-semibold text-leaf-700">{radiusKm} km</span>
+              </label>
+              <input type="range" min={20} max={300} step={10} value={radiusKm}
+                     onChange={(e) => setRadiusKm(Number(e.target.value))}
+                     className="h-2 w-full cursor-pointer appearance-none rounded-full bg-leaf-100 accent-leaf-600" />
+            </div>
+
+            <button onClick={runAuto} disabled={busy}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-harvest-500 py-3 text-sm font-bold text-white transition hover:bg-harvest-600 disabled:opacity-50">
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              {busy ? t('mandi.searching') : t('mandi.findNearby')}
+            </button>
+          </>
+        )}
+
         <details className="rounded-xl bg-soil-50 p-3">
           <summary className="cursor-pointer text-xs font-semibold text-soil-900">
-            <Truck size={13} className="mr-1 inline" />
-            {t('mandi.vehicle')}
+            <Truck size={13} className="mr-1 inline" />{t('mandi.vehicle')}
           </summary>
           <div className="mt-3 grid grid-cols-3 gap-2">
             {[
@@ -118,51 +205,60 @@ export default function MandiProfitWidget({ lat, lon, crop, language }: Props) {
           </div>
         </details>
 
-        <div className="space-y-2">
-          {rows.map((r, i) => (
-            <div key={i} className="rounded-xl border border-leaf-50 p-2.5">
-              <div className="flex items-center gap-2">
-                <input value={r.name} placeholder={`${t('mandi.name')} ${i + 1}`}
-                       onChange={(e) => update(i, { name: e.target.value })}
-                       className="min-w-0 flex-1 rounded-lg border border-leaf-100 px-2.5 py-1.5 text-sm outline-none focus:border-leaf-500" />
-                {rows.length > 1 && (
-                  <button onClick={() => setRows(rows.filter((_, x) => x !== i))}
-                          className="rounded-lg p-1.5 text-alert-600 hover:bg-alert-400/10" aria-label={t('mandi.remove')}>
-                    <Trash2 size={15} />
-                  </button>
-                )}
+        {/* manual editor */}
+        {mode === 'manual' && (
+          <div className="space-y-2">
+            {rows.map((r, i) => (
+              <div key={i} className="rounded-xl border border-leaf-50 p-2.5">
+                <div className="flex items-center gap-2">
+                  <input value={r.name} placeholder={`${t('mandi.name')} ${i + 1}`}
+                         onChange={(e) => update(i, { name: e.target.value })}
+                         className="min-w-0 flex-1 rounded-lg border border-leaf-100 px-2.5 py-1.5 text-sm outline-none focus:border-leaf-500" />
+                  {rows.length > 1 && (
+                    <button onClick={() => setRows(rows.filter((_, x) => x !== i))}
+                            className="rounded-lg p-1.5 text-alert-600 hover:bg-alert-400/10" aria-label={t('mandi.remove')}>
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                </div>
+                <div className="mt-2 grid grid-cols-4 gap-1.5">
+                  {[
+                    { l: t('mandi.dist'), v: r.distanceKm, k: 'distanceKm' as const },
+                    { l: t('mandi.rate'), v: r.pricePerQuintal, k: 'pricePerQuintal' as const },
+                    { l: t('mandi.handling'), v: r.handlingFee, k: 'handlingFee' as const },
+                    { l: t('mandi.commission'), v: r.commissionPct, k: 'commissionPct' as const },
+                  ].map((f) => (
+                    <label key={f.k} className="text-[10px] text-soil-700/80">
+                      {f.l}
+                      <input type="number" value={numVal(f.v)} placeholder="0"
+                             onChange={(e) => update(i, { [f.k]: e.target.value === '' ? 0 : Number(e.target.value) } as Partial<Row>)}
+                             className="mt-0.5 w-full rounded-md border border-leaf-50 px-1.5 py-1 text-xs outline-none focus:border-leaf-500" />
+                    </label>
+                  ))}
+                </div>
               </div>
-              <div className="mt-2 grid grid-cols-4 gap-1.5">
-                {[
-                  { l: t('mandi.dist'), v: r.distanceKm, k: 'distanceKm' as const },
-                  { l: t('mandi.rate'), v: r.pricePerQuintal, k: 'pricePerQuintal' as const },
-                  { l: t('mandi.handling'), v: r.handlingFee, k: 'handlingFee' as const },
-                  { l: t('mandi.commission'), v: r.commissionPct, k: 'commissionPct' as const },
-                ].map((f) => (
-                  <label key={f.k} className="text-[10px] text-soil-700/80">
-                    {f.l}
-                    <input type="number" value={numVal(f.v)} placeholder="0"
-                           onChange={(e) => update(i, { [f.k]: e.target.value === '' ? 0 : Number(e.target.value) } as Partial<Row>)}
-                           className="mt-0.5 w-full rounded-md border border-leaf-50 px-1.5 py-1 text-xs outline-none focus:border-leaf-500" />
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
-          <button onClick={() => setRows([...rows, { ...EMPTY }])}
-                  className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-leaf-300 py-2 text-xs font-semibold text-leaf-700 hover:bg-leaf-50">
-            <Plus size={14} /> {t('mandi.addMandi')}
-          </button>
-        </div>
+            ))}
+            <button onClick={() => setRows([...rows, { ...EMPTY }])}
+                    className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-leaf-300 py-2 text-xs font-semibold text-leaf-700 hover:bg-leaf-50">
+              <Plus size={14} /> {t('mandi.addMandi')}
+            </button>
+            <button onClick={runManual} disabled={busy}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-harvest-500 py-3 text-sm font-bold text-white transition hover:bg-harvest-600 disabled:opacity-50">
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <IndianRupee size={16} />}
+              {t('mandi.calculate')}
+            </button>
+          </div>
+        )}
 
-        <button onClick={calculate} disabled={busy}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-harvest-500 py-3 text-sm font-bold text-white transition hover:bg-harvest-600 disabled:opacity-50">
-          {busy ? <Loader2 size={16} className="animate-spin" /> : <IndianRupee size={16} />}
-          {t('mandi.calculate')}
-        </button>
+        {auto?.warnings?.map((w) => (
+          <p key={w} className="flex gap-1.5 rounded-lg bg-harvest-400/12 p-2.5 text-[11px] text-harvest-600">
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />{w}
+          </p>
+        ))}
 
         {error && <p className="rounded-lg bg-alert-400/10 p-3 text-sm text-alert-600">{error}</p>}
 
+        {/* results */}
         {result && (
           <div className="space-y-3">
             <div className="rounded-xl bg-leaf-600 p-3 text-white">
@@ -195,27 +291,32 @@ export default function MandiProfitWidget({ lat, lon, crop, language }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {result.results.map((r) => (
-                    <tr key={r.id} className={`border-b border-soil-50 ${r.rank === 1 ? 'bg-leaf-50' : ''}`}>
-                      <td className="px-2 py-2 font-semibold text-soil-700">{r.rank}</td>
-                      <td className="px-2 py-2">
-                        <p className="font-semibold text-soil-900">{r.name}</p>
-                        <p className="text-[10px] text-soil-700/70">
-                          {r.distanceKm.toFixed(0)} km · ₹{r.pricePerQuintal}/{t('common.quintal')}
-                          {r.trips > 1 && ` · ${r.trips} ${t('mandi.trips')}`}
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-soil-700/60">{t(r.verdictCode)}</p>
-                      </td>
-                      <td className="px-2 py-2 text-right text-soil-700">{inr(r.grossRevenue)}</td>
-                      <td className="px-2 py-2 text-right text-alert-600">−{inr(r.totalDeductions)}</td>
-                      <td className="px-2 py-2 text-right text-soil-700">
-                        {r.roundTripHours.toFixed(1)} {t('common.hours')}
-                      </td>
-                      <td className={`px-2 py-2 text-right font-bold ${r.viable ? 'text-leaf-700' : 'text-alert-600'}`}>
-                        {inr(r.netProfit)}
-                      </td>
-                    </tr>
-                  ))}
+                  {result.results.map((r) => {
+                    const src = auto?.discovered.find((d) => d.id === r.id);
+                    return (
+                      <tr key={r.id} className={`border-b border-soil-50 ${r.rank === 1 ? 'bg-leaf-50' : ''}`}>
+                        <td className="px-2 py-2 font-semibold text-soil-700">{r.rank}</td>
+                        <td className="px-2 py-2">
+                          <p className="font-semibold text-soil-900">{r.name}</p>
+                          <p className="text-[10px] text-soil-700/70">
+                            {r.distanceKm.toFixed(0)} km · ₹{r.pricePerQuintal}/{t('common.quintal')}
+                            {r.trips > 1 && ` · ${r.trips} ${t('mandi.trips')}`}
+                          </p>
+                          {src?.precision === 'district' && (
+                            <p className="text-[9px] text-harvest-600">{t('mandi.approxDistance')}</p>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right text-soil-700">{inr(r.grossRevenue)}</td>
+                        <td className="px-2 py-2 text-right text-alert-600">−{inr(r.totalDeductions)}</td>
+                        <td className="px-2 py-2 text-right text-soil-700">
+                          {r.roundTripHours.toFixed(1)} {t('common.hours')}
+                        </td>
+                        <td className={`px-2 py-2 text-right font-bold ${r.viable ? 'text-leaf-700' : 'text-alert-600'}`}>
+                          {inr(r.netProfit)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

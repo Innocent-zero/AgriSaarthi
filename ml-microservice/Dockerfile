@@ -19,7 +19,9 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY app ./app
 
 # Bake the trained SVM into the image so cold starts never pay training cost.
-RUN python -m app.models.train_svm_mock --samples 260 --quiet
+# Bake the trained SVM and the scheme index so cold starts pay no build cost.
+RUN python -m app.models.train_svm_mock --samples 260 --quiet && \
+    python -m app.scripts.ingest
 
 EXPOSE 8000
 

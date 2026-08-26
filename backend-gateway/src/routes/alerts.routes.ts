@@ -173,4 +173,18 @@ router.post('/dispatch', requireAuth, async (req: Request, res: Response, next: 
   }
 });
 
+/** POST /api/v1/alerts/refresh-kb — n8n cron target for the nightly crawl. */
+router.post('/refresh-kb', verifyWebhookSecret, async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { data } = await axios.post(
+      `${process.env.ML_SERVICE_URL || 'http://127.0.0.1:8010'}/api/v1/rag/refresh`,
+      {},
+      { timeout: 180000 },
+    );
+    res.json({ success: true, ...data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

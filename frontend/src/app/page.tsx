@@ -124,7 +124,9 @@ export default function Home() {
     switch (screen) {
       case 'weather': return <WeatherPanel lat={farm.lat} lon={farm.lon} language={language} />;
       case 'npk':     return <NpkCalculatorWidget lat={farm.lat} lon={farm.lon} crop={farm.crop} areaHa={farm.areaHa} language={language} />;
-      case 'mandi':   return <MandiProfitWidget lat={farm.lat} lon={farm.lon} crop={farm.crop} language={language} />;
+      case 'mandi':
+        return <MandiProfitWidget lat={farm.lat} lon={farm.lon} crop={farm.crop}
+                                  state={farm.state} district={farm.district} language={language} />;
       case 'disease': return <LeafDiagnosticModal crop={farm.crop} language={language} />;
       case 'pmfby':   return <PmfbyReportDownload {...farm} language={language} />;
       case 'risk':

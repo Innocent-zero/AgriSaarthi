@@ -14,7 +14,10 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.services.disease_classifier import get_classifier
 from app.services.pmfby_pdf_generator import generate_pmfby_report
+from app.services.tavily_ingest import tavily_ingest
+from app.services.rag_service import rag_service
 from app.services.tavily_search import tavily_service
+
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(),
                     format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 logger = logging.getLogger("agrisaarthi.ml")
@@ -112,7 +115,51 @@ class PmfbyRequest(BaseModel):
     def _clean_cause(cls, v: str) -> str:
         return v.strip()
 
+class RagQuery(BaseModel):
+    query: str = Field(..., min_length=2, max_length=300)
+    language: str = Field("hi", pattern="^(hi|en)$")
+    scheme_id: Optional[str] = Field(None, max_length=40)
+    k: int = Field(4, ge=1, le=8)
 
+
+class ClaimCheck(BaseModel):
+    cause: str = Field(..., min_length=2, max_length=200)
+    event_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    estimated_loss_pct: float = Field(..., ge=0, le=100)
+    language: str = Field("hi", pattern="^(hi|en)$")
+    reported_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+@app.post("/api/v1/rag/query")
+async def rag_query(payload: RagQuery) -> Dict[str, Any]:
+    """Direct knowledge-base lookup, bypassing the live-search fallback."""
+    if not rag_service.ready:
+        raise HTTPException(503, "Knowledge base is not built. Run: python -m app.scripts.ingest")
+    ans = rag_service.answer(payload.query, language=payload.language, k=payload.k)
+    return {"success": True, **ans.to_dict()}
+
+
+@app.post("/api/v1/pmfby/claim-check")
+async def pmfby_claim_check(payload: ClaimCheck) -> Dict[str, Any]:
+    """Grounded eligibility screen for a PMFBY claim about to be filed."""
+    if not rag_service.ready:
+        raise HTTPException(503, "Knowledge base is not built. Run: python -m app.scripts.ingest")
+    return {
+        "success": True,
+        **rag_service.check_pmfby_claim(
+            cause=payload.cause,
+            event_date=payload.event_date,
+            estimated_loss_pct=payload.estimated_loss_pct,
+            language=payload.language,
+            reported_date=payload.reported_date,
+        ),
+    }
+
+
+@app.post("/api/v1/rag/rebuild")
+async def rag_rebuild() -> Dict[str, Any]:
+    """Rebuild from the seed corpus. For PDF ingestion use the ingest script."""
+    return {"success": True, "stats": rag_service.rebuild()}
 # ═══════════════════════ Routes ═══════════════════════
 @app.get("/health")
 async def health() -> Dict[str, Any]:
@@ -122,9 +169,22 @@ async def health() -> Dict[str, Any]:
         "service": "agrisaarthi-ml",
         "version": "1.0.0",
         "classifier": {"ready": clf.ready, "version": clf.version, "classes": clf.classes},
-        "tavily": "configured" if tavily_service.enabled else "not configured",
+        "knowledge_base": rag_service.stats(),
+        "tavily": {
+            "search": tavily_service.tavily_enabled,   # answers farmer questions
+            "ingest": tavily_ingest.enabled,           # refreshes the index
+        },
     }
 
+@app.post("/api/v1/rag/refresh")
+async def rag_refresh() -> Dict[str, Any]:
+    """
+    Crawl official scheme portals and rebuild the index. Takes 30–90 seconds.
+    Run it on a schedule (n8n cron) rather than per request.
+    """
+    if not tavily_ingest.enabled:
+        raise HTTPException(503, "TAVILY_API_KEY is not configured")
+    return await rag_service.refresh_from_web()
 
 @app.post("/api/v1/diagnose")
 async def diagnose(
@@ -178,13 +238,14 @@ async def diagnose(
 
 @app.post("/api/v1/schemes")
 async def schemes(payload: SchemeQuery) -> Dict[str, Any]:
+    """Knowledge base first, live web second — see SchemeAnswerService."""
     answer = await tavily_service.search(
         query=payload.query,
         state=payload.state,
         language=payload.language,
         max_results=payload.max_results,
     )
-    return {"success": answer.source != "error", **answer.to_dict()}
+    return {"success": answer.source != "none", **answer.to_dict()}
 
 
 @app.post("/api/v1/pmfby/report")
@@ -215,6 +276,9 @@ async def http_error(_, exc: HTTPException) -> JSONResponse:
 async def warmup() -> None:
     clf = get_classifier()
     logger.info("Classifier warm — v%s, %d classes", clf.version, len(clf.classes))
+    stats = rag_service.stats()
+    logger.info("Knowledge base — %d chunks across %s",
+                stats["chunks"], ", ".join(stats["schemes"]))
 
 
 if __name__ == "__main__":

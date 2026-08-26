@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Bot, User, Loader2, WifiOff, ExternalLink } from 'lucide-react';
+import { Bot, User, Loader2, WifiOff, ExternalLink, BookOpen} from 'lucide-react';
 import { api, AgentAction, SchemeAnswer, friendlyError } from '@/lib/api';
 import { appendChat, recentChat, clearChat } from '@/lib/idb';
 import { makeT, Locale } from '@/lib/i18n';
@@ -62,21 +62,33 @@ function SchemeCard({ query, state, language }: { query: string; state?: string;
 
   return (
     <div className="animate-slideUp rounded-2xl border border-leaf-100 bg-white p-4 shadow-card">
-      <p className="mb-2 text-sm leading-relaxed text-soil-900">{data.summary}</p>
+      {data.grounded && (
+        <p className="mb-2 inline-flex items-center gap-1 rounded-full bg-leaf-50 px-2 py-0.5 text-[10px] font-semibold text-leaf-700">
+          <BookOpen size={10} /> {t('rag.grounded')}
+        </p>
+      )}
+
+      <p className="mb-2 whitespace-pre-line text-sm leading-relaxed text-soil-900">{data.summary}</p>
+
       <div className="space-y-2">
         {data.results.slice(0, 4).map((r) => (
-          <a key={r.url} href={r.url} target="_blank" rel="noreferrer"
+          <a key={`${r.title}-${r.url}`} href={r.url || undefined} target="_blank" rel="noreferrer"
              className="block rounded-lg border border-leaf-50 p-2.5 transition hover:bg-leaf-50">
             <p className="flex items-start gap-1 text-xs font-semibold text-leaf-700">
-              {r.title}<ExternalLink size={11} className="mt-0.5 shrink-0" />
+              {r.title}
+              {r.url && <ExternalLink size={11} className="mt-0.5 shrink-0" />}
             </p>
             <p className="mt-1 line-clamp-2 text-[11px] text-soil-700">{r.snippet}</p>
             <p className="mt-1 text-[10px] text-soil-700/60">
-              {r.domain}{r.official && ` · ${t('chat.scheme.officialSource')}`}
+              {r.domain}{r.official && ` · ${t('rag.official')}`}
             </p>
           </a>
         ))}
       </div>
+
+      {!data.grounded && data.source === 'live-search' && (
+        <p className="mt-2 text-[10px] text-harvest-600">{t('rag.liveOnly')}</p>
+      )}
     </div>
   );
 }

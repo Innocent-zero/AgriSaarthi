@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { FileText, Download, Loader2, Satellite } from 'lucide-react';
 import { api, friendlyError } from '@/lib/api';
 import { makeT, translate, Locale } from '@/lib/i18n';
+import PmfbyClaimCheck from './PmfbyClaimCheck';
+
 interface Props {
   lat: number;
   lon: number;
@@ -16,69 +18,107 @@ interface Props {
 }
 
 const CAUSE_KEYS = [
-  'pmfby.cause.flood', 'pmfby.cause.drought', 'pmfby.cause.hail',
-  'pmfby.cause.wind', 'pmfby.cause.pest', 'pmfby.cause.disease',
+  'pmfby.cause.flood',
+  'pmfby.cause.drought',
+  'pmfby.cause.hail',
+  'pmfby.cause.wind',
+  'pmfby.cause.pest',
+  'pmfby.cause.disease',
   'pmfby.cause.unseasonal',
 ];
+
+/**
+ * When the agent guesses a cause it hands over a display label, not a key.
+ * Match it back to a key so the dropdown, the claim check and the PDF all
+ * agree on one canonical cause.
+ */
+function keyForCause(label?: string): string {
+  if (!label) return CAUSE_KEYS[0];
+  const needle = label.trim().toLowerCase();
+  for (const key of CAUSE_KEYS) {
+    if (translate('en', key).toLowerCase() === needle) return key;
+    if (translate('hi', key).toLowerCase() === needle) return key;
+  }
+  return CAUSE_KEYS[0];
+}
 
 export default function PmfbyReportDownload({
   lat, lon, crop, areaHa, farmerName, language, boundary = [], defaultCause,
 }: Props) {
   const t = makeT(language);
 
-  // Store the KEY, render the label — so switching language reflows the whole form.
-  const [causeKey, setCauseKey] = useState(CAUSE_KEYS[0]);
+  // Store the KEY, render the label — so a language switch reflows the form.
+  const [causeKey, setCauseKey] = useState(() => keyForCause(defaultCause));
   const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
   const [affected, setAffected] = useState(areaHa);
   const [preNdvi, setPreNdvi] = useState(0.68);
   const [postNdvi, setPostNdvi] = useState(0.34);
   const [description, setDescription] = useState('');
   const [policyNo, setPolicyNo] = useState('');
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const lossPct = preNdvi > 0 ? Math.max(0, ((preNdvi - postNdvi) / preNdvi) * 100) : 0;
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoNote, setAutoNote] = useState<string | null>(null);
+  const [ndviObserved, setNdviObserved] = useState(false);
 
+  const lossPct = preNdvi > 0 ? Math.max(0, ((preNdvi - postNdvi) / preNdvi) * 100) : 0;
+
+  /** Replace the placeholder NDVI pair with values observed around the event. */
   async function autofillNdvi() {
     setAutoBusy(true);
     setAutoNote(null);
     try {
       const r = await api.ndviEvent({ lat, lon, eventDate, boundary });
-      if (r.pre && r.post) {
+      if (r.usable && r.pre && r.post) {
         setPreNdvi(Number(r.pre.mean.toFixed(3)));
         setPostNdvi(Number(r.post.mean.toFixed(3)));
+        setNdviObserved(true);
         setAutoNote(t('pmfby.autofillOk'));
       } else {
-        setAutoNote(t('pmfby.autofillFail'));
+        // Never write unusable satellite values into a claim document.
+        setNdviObserved(false);
+        setAutoNote(r.reason || t('pmfby.autofillFail'));
       }
     } catch {
+      setNdviObserved(false);
       setAutoNote(t('pmfby.autofillFail'));
     } finally {
       setAutoBusy(false);
     }
   }
+
   async function generate() {
     setBusy(true);
     setError(null);
     setDone(false);
     try {
-      const today = new Date();
-      const pre = new Date(today.getTime() - 20 * 86400000).toISOString().slice(0, 10);
+      const preDate = new Date(new Date(eventDate).getTime() - 20 * 86400000)
+        .toISOString().slice(0, 10);
+
       const blob = await api.pmfbyReport({
-        farmer: { name: farmerName || 'Farmer', policy_no: policyNo || undefined },
+        farmer: {
+          name: farmerName || 'Farmer',
+          policy_no: policyNo || undefined,
+        },
         farm: {
-          crop, area_ha: areaHa, lat, lon,
+          crop,
+          area_ha: areaHa,
+          lat,
+          lon,
           boundary: boundary.map((p) => ({ lat: p.lat, lon: p.lon })),
         },
         ndvi: {
-          pre_event_date: pre, pre_event_mean: preNdvi,
-          post_event_date: eventDate, post_event_mean: postNdvi,
+          pre_event_date: preDate,
+          pre_event_mean: preNdvi,
+          post_event_date: eventDate,
+          post_event_mean: postNdvi,
         },
         weather_anomalies: [],
-        // The PDF is an official document for a surveyor — always English.
+        // The passbook goes to a surveyor, so the cause is always in English
+        // regardless of the language the farmer is using in the app.
         cause: translate('en', causeKey),
         event_date: eventDate,
         description: description || undefined,
@@ -113,8 +153,11 @@ export default function PmfbyReportDownload({
       <div className="space-y-3 p-4">
         <label className="block text-xs font-medium text-soil-700">
           {t('pmfby.cause')}
-          <select value={causeKey} onChange={(e) => setCauseKey(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500">
+          <select
+            value={causeKey}
+            onChange={(e) => setCauseKey(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500"
+          >
             {CAUSE_KEYS.map((k) => <option key={k} value={k}>{t(k)}</option>)}
           </select>
         </label>
@@ -122,30 +165,46 @@ export default function PmfbyReportDownload({
         <div className="grid grid-cols-2 gap-3">
           <label className="text-xs font-medium text-soil-700">
             {t('pmfby.date')}
-            <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)}
-                   className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500" />
+            <input
+              type="date"
+              value={eventDate}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => { setEventDate(e.target.value); setNdviObserved(false); setAutoNote(null); }}
+              className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500"
+            />
           </label>
           <label className="text-xs font-medium text-soil-700">
             {t('pmfby.affected')}
-            <input type="number" step={0.1} min={0} value={affected === 0 ? '' : affected} placeholder="0"
-                   onChange={(e) => setAffected(e.target.value === '' ? 0 : Number(e.target.value))}
-                   className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500" />
+            <input
+              type="number" step={0.1} min={0}
+              value={affected === 0 ? '' : affected}
+              placeholder="0"
+              onChange={(e) => setAffected(e.target.value === '' ? 0 : Number(e.target.value))}
+              className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500"
+            />
           </label>
         </div>
 
         <label className="block text-xs font-medium text-soil-700">
           {t('pmfby.policy')}
-          <input value={policyNo} onChange={(e) => setPolicyNo(e.target.value)}
-                 className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500" />
+          <input
+            value={policyNo}
+            onChange={(e) => setPolicyNo(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500"
+          />
         </label>
 
+        {/* ── satellite evidence ── */}
         <div className="rounded-xl bg-leaf-50 p-3">
           <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-leaf-700">
             <Satellite size={13} /> {t('pmfby.ndvi')}
           </p>
 
-          <button onClick={autofillNdvi} disabled={autoBusy}
-                  className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-leaf-300 bg-white py-2 text-[11px] font-semibold text-leaf-700 disabled:opacity-50">
+          <button
+            onClick={autofillNdvi}
+            disabled={autoBusy}
+            className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-leaf-300 bg-white py-2 text-[11px] font-semibold text-leaf-700 disabled:opacity-50"
+          >
             {autoBusy ? <Loader2 size={12} className="animate-spin" /> : <Satellite size={12} />}
             {autoBusy ? t('pmfby.autofilling') : t('pmfby.autofill')}
           </button>
@@ -158,29 +217,53 @@ export default function PmfbyReportDownload({
             ].map((f) => (
               <label key={f.l} className="text-[11px] text-soil-700">
                 {f.l}
-                <input type="number" step={0.01} min={0} max={1} value={f.v}
-                       onChange={(e) => f.s(Number(e.target.value))}
-                       className="mt-1 w-full rounded-lg border border-leaf-100 px-2 py-1.5 text-sm outline-none focus:border-leaf-500" />
+                <input
+                  type="number" step={0.01} min={0} max={1}
+                  value={f.v}
+                  onChange={(e) => { f.s(Number(e.target.value)); setNdviObserved(false); }}
+                  className="mt-1 w-full rounded-lg border border-leaf-100 px-2 py-1.5 text-sm outline-none focus:border-leaf-500"
+                />
               </label>
             ))}
           </div>
+
           <div className="mt-2.5 flex items-center justify-between rounded-lg bg-white px-3 py-2">
             <span className="text-xs text-soil-700">{t('pmfby.estLoss')}</span>
             <span className={`text-base font-bold ${lossPct >= 33 ? 'text-alert-600' : 'text-harvest-600'}`}>
               {lossPct.toFixed(1)}%
             </span>
           </div>
+
           {lossPct >= 33 && <p className="mt-1.5 text-[11px] text-alert-600">{t('pmfby.threshold')}</p>}
+          {!ndviObserved && (
+            <p className="mt-1.5 text-[10px] text-soil-700/70">{t('pmfby.ndviPlaceholder')}</p>
+          )}
         </div>
+
+        {/* ── grounded eligibility screen ── */}
+        <PmfbyClaimCheck
+          causeKey={causeKey}
+          eventDate={eventDate}
+          lossPct={lossPct}
+          language={language}
+        />
 
         <label className="block text-xs font-medium text-soil-700">
           {t('pmfby.desc')}
-          <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)}
-                    placeholder={t('pmfby.descPh')}
-                    className="mt-1 w-full resize-none rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500" />
+          <textarea
+            rows={2}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={t('pmfby.descPh')}
+            className="mt-1 w-full resize-none rounded-lg border border-leaf-100 px-2.5 py-2 text-sm outline-none focus:border-leaf-500"
+          />
         </label>
-        <button onClick={generate} disabled={busy}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-soil-900 py-3 text-sm font-bold text-white transition hover:bg-black disabled:opacity-50">
+
+        <button
+          onClick={generate}
+          disabled={busy}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-soil-900 py-3 text-sm font-bold text-white transition hover:bg-black disabled:opacity-50"
+        >
           {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
           {t('pmfby.download')}
         </button>

@@ -37,7 +37,376 @@ CLASS_LABELS: List[str] = ALL_PLANT_VILLAGE_CLASSES
 # with a treatment a farmer can actually buy at the local krishi kendra.
 # Full 38-class PlantVillage KB lives in plant_village_treatments.py to keep
 # this file focused on inference logic.
-TREATMENT_KB: Dict[str, Dict[str, object]] = PLANT_VILLAGE_TREATMENT_KB
+TREATMENT_KB: Dict[str, Dict[str, object]] = {
+    "healthy": {
+        "display_en": "Healthy leaf", "display_hi": "स्वस्थ पत्ती",
+        "severity": "none",
+        "advice_en": "No disease detected. Continue your normal schedule and scout again in 5–7 days.",
+        "advice_hi": "कोई बीमारी नहीं मिली। सामान्य कार्यक्रम जारी रखें और 5–7 दिन बाद दोबारा जाँचें।",
+        "treatment": [], "treatment_hi": [], "est_cost_inr_per_acre": 0,
+    },
+    "_unknown": {
+        "display_en": "Disease detected — identification uncertain",
+        "display_hi": "बीमारी मिली — पहचान अनिश्चित",
+        "severity": "medium",
+        "advice_en": "The leaf is not healthy, but the exact disease could not be identified with confidence. Take the leaf to your nearest Krishi Vigyan Kendra before buying any chemical.",
+        "advice_hi": "पत्ती स्वस्थ नहीं है, पर बीमारी की पक्की पहचान नहीं हो सकी। कोई दवा खरीदने से पहले पत्ती नज़दीकी कृषि विज्ञान केंद्र ले जाएँ।",
+        "treatment": [
+            "Remove and destroy visibly affected leaves",
+            "Avoid overhead irrigation until identified",
+            "Do not spray a broad-spectrum chemical blindly",
+        ],
+        "treatment_hi": [
+            "साफ़ दिख रही प्रभावित पत्तियाँ तोड़कर नष्ट करें",
+            "पहचान होने तक ऊपर से पानी देना बंद रखें",
+            "बिना पहचान के कोई भी दवा अंदाज़े से न छिड़कें",
+        ],
+        "est_cost_inr_per_acre": 0,
+    },
+    "early_blight": {
+        "display_en": "Early blight",
+        "display_hi": "अगेती झुलसा",
+        "severity": "high",
+        "advice_en": "Concentric brown lesions indicate early blight. Remove infected lower leaves and spray a protectant fungicide.",
+        "advice_hi": "गोल भूरे धब्बे अगेती झुलसा दर्शाते हैं। नीचे की संक्रमित पत्तियाँ हटाएँ और फफूंदनाशक छिड़कें।",
+        "treatment": [
+            "Mancozeb 75% WP @ 2.5 g/litre",
+            "Alternate with Chlorothalonil to prevent resistance",
+            "Improve row spacing for airflow",
+        ],
+        "treatment_hi": [
+            "मैंकोज़ेब 75% WP @ 2.5 ग्राम/लीटर",
+            "प्रतिरोध रोकने के लिए क्लोरोथैलोनिल से बदल-बदलकर छिड़कें",
+            "हवा के लिए कतारों की दूरी बढ़ाएँ",
+        ],
+        "est_cost_inr_per_acre": 380,
+    },
+    "powdery_mildew": {
+        "display_en": "Powdery mildew",
+        "display_hi": "चूर्णिल आसिता",
+        "severity": "medium",
+        "advice_en": "White powdery growth on the upper surface. It spreads fastest in dry days with humid nights.",
+        "advice_hi": "पत्ती के ऊपर सफ़ेद पाउडर जैसा फैलाव। सूखे दिन और नम रात में तेज़ी से फैलता है।",
+        "treatment": [
+            "Wettable sulphur 80% WP @ 2 g/litre",
+            "Or Hexaconazole 5% EC @ 1 ml/litre",
+            "Spray in the evening to avoid leaf scorch",
+        ],
+        "treatment_hi": [
+            "घुलनशील गंधक 80% WP @ 2 ग्राम/लीटर",
+            "या हेक्साकोनाज़ोल 5% EC @ 1 मिली/लीटर",
+            "पत्ती झुलसने से बचाने के लिए शाम को छिड़कें",
+        ],
+        "est_cost_inr_per_acre": 260,
+    },
+    "bacterial_spot": {
+        "display_en": "Bacterial leaf spot",
+        "display_hi": "जीवाणु पत्ती धब्बा",
+        "severity": "high",
+        "advice_en": "Water-soaked dark spots with yellow halos. Fungicides will not work — you need a copper-based bactericide.",
+        "advice_hi": "पीले घेरे वाले गीले काले धब्बे। फफूंदनाशक बेअसर है — कॉपर आधारित दवा चाहिए।",
+        "treatment": [
+            "Copper oxychloride 50% WP @ 3 g/litre",
+            "Add Streptomycin sulphate @ 0.1 g/litre where permitted",
+            "Stop overhead irrigation immediately",
+        ],
+        "treatment_hi": [
+            "कॉपर ऑक्सीक्लोराइड 50% WP @ 3 ग्राम/लीटर",
+            "जहाँ अनुमति हो, स्ट्रेप्टोमाइसिन सल्फेट @ 0.1 ग्राम/लीटर मिलाएँ",
+            "ऊपर से पानी देना तुरंत बंद करें",
+        ],
+        "est_cost_inr_per_acre": 450,
+    },
+    "late_blight": {
+        "display_en": "Late blight", "display_hi": "पछेती झुलसा",
+        "severity": "high",
+        "advice_en": "Late blight spreads explosively in cool humid weather and can destroy a potato or tomato crop within days. Spray within 24 hours.",
+        "advice_hi": "पछेती झुलसा ठंडे-नम मौसम में बहुत तेज़ी से फैलता है और आलू-टमाटर की फसल कुछ ही दिनों में बर्बाद कर सकता है। 24 घंटे में छिड़काव करें।",
+        "treatment": [
+            "Metalaxyl 8% + Mancozeb 64% WP @ 2.5 g/litre",
+            "Repeat after 7–10 days if humid weather continues",
+            "Destroy infected plant debris, do not compost it",
+        ],
+        "treatment_hi": [
+            "मेटालैक्सिल 8% + मैंकोज़ेब 64% WP @ 2.5 ग्राम/लीटर",
+            "नम मौसम रहे तो 7–10 दिन बाद दोबारा छिड़कें",
+            "संक्रमित अवशेष नष्ट करें, खाद में न डालें",
+        ],
+        "est_cost_inr_per_acre": 520,
+    },
+    "septoria_leaf_spot": {
+        "display_en": "Septoria leaf spot", "display_hi": "सेप्टोरिया पत्ती धब्बा",
+        "severity": "high",
+        "advice_en": "Small dark spots with pale centres, starting on lower leaves and moving upward. Remove the lowest affected leaves and spray.",
+        "advice_hi": "हल्के बीच वाले छोटे काले धब्बे, नीचे की पत्तियों से शुरू होकर ऊपर बढ़ते हैं। सबसे नीचे की प्रभावित पत्तियाँ हटाएँ और छिड़काव करें।",
+        "treatment": [
+            "Chlorothalonil 75% WP @ 2 g/litre",
+            "Remove and destroy lower infected leaves",
+            "Mulch to stop soil splash onto leaves",
+        ],
+        "treatment_hi": [
+            "क्लोरोथैलोनिल 75% WP @ 2 ग्राम/लीटर",
+            "नीचे की संक्रमित पत्तियाँ तोड़कर नष्ट करें",
+            "मिट्टी के छींटे रोकने के लिए पलवार बिछाएँ",
+        ],
+        "est_cost_inr_per_acre": 400,
+    },
+    "leaf_mold": {
+        "display_en": "Leaf mould", "display_hi": "पत्ती फफूंद",
+        "severity": "medium",
+        "advice_en": "Yellow patches above with olive-grey mould underneath. It thrives in still, humid air, so ventilation matters as much as spraying.",
+        "advice_hi": "ऊपर पीले धब्बे और नीचे जैतूनी-भूरी फफूंद। रुकी हुई नम हवा में बढ़ता है, इसलिए हवा का बहाव दवा जितना ही ज़रूरी है।",
+        "treatment": [
+            "Copper oxychloride 50% WP @ 3 g/litre",
+            "Increase spacing and prune lower leaves for airflow",
+            "Water at the base, never over the canopy",
+        ],
+        "treatment_hi": [
+            "कॉपर ऑक्सीक्लोराइड 50% WP @ 3 ग्राम/लीटर",
+            "दूरी बढ़ाएँ और नीचे की पत्तियाँ छाँटें ताकि हवा चले",
+            "जड़ में पानी दें, ऊपर से कभी नहीं",
+        ],
+        "est_cost_inr_per_acre": 350,
+    },
+    "target_spot": {
+        "display_en": "Target spot", "display_hi": "लक्ष्य धब्बा",
+        "severity": "medium",
+        "advice_en": "Brown lesions with concentric rings resembling a target. Manage like early blight with a protectant fungicide.",
+        "advice_hi": "गोल छल्लों वाले भूरे धब्बे, निशाने जैसे दिखते हैं। अगेती झुलसा की तरह सुरक्षात्मक फफूंदनाशक से नियंत्रण करें।",
+        "treatment": [
+            "Mancozeb 75% WP @ 2.5 g/litre",
+            "Remove crop debris after harvest",
+            "Rotate with a non-solanaceous crop next season",
+        ],
+        "treatment_hi": [
+            "मैंकोज़ेब 75% WP @ 2.5 ग्राम/लीटर",
+            "कटाई के बाद फसल अवशेष हटाएँ",
+            "अगले मौसम में सोलेनेसी के अलावा दूसरी फसल लें",
+        ],
+        "est_cost_inr_per_acre": 380,
+    },
+    "spider_mites": {
+        "display_en": "Two-spotted spider mites", "display_hi": "मकड़ी कीट (माइट)",
+        "severity": "medium",
+        "advice_en": "These are mites, not a fungus — fungicide will not work. Look for fine webbing and stippled leaves, worst in hot dry spells.",
+        "advice_hi": "यह फफूंद नहीं, मकड़ी कीट है — फफूंदनाशक बेअसर रहेगा। बारीक जाला और चित्तीदार पत्तियाँ देखें, गर्म-सूखे मौसम में सबसे ज़्यादा।",
+        "treatment": [
+            "Spiromesifen 22.9% SC @ 1 ml/litre, or wettable sulphur @ 3 g/litre",
+            "Spray the underside of leaves, where mites live",
+            "Raise humidity with light irrigation to slow them",
+        ],
+        "treatment_hi": [
+            "स्पाइरोमेसिफेन 22.9% SC @ 1 मिली/लीटर, या घुलनशील गंधक @ 3 ग्राम/लीटर",
+            "पत्ती के नीचे की तरफ़ छिड़कें, कीट वहीं रहते हैं",
+            "हल्की सिंचाई से नमी बढ़ाएँ ताकि प्रकोप धीमा हो",
+        ],
+        "est_cost_inr_per_acre": 460,
+    },
+    "mosaic_virus": {
+        "display_en": "Mosaic virus", "display_hi": "मोज़ेक विषाणु",
+        "severity": "high",
+        "advice_en": "This is a virus. No spray can cure it — money spent on fungicide is wasted. Remove infected plants to protect the rest of the field.",
+        "advice_hi": "यह विषाणु रोग है। कोई भी छिड़काव इसे ठीक नहीं कर सकता — फफूंदनाशक पर पैसा बर्बाद होगा। बाकी खेत बचाने के लिए संक्रमित पौधे उखाड़ दें।",
+        "treatment": [
+            "Uproot and burn infected plants immediately",
+            "Wash hands and tools before touching healthy plants",
+            "Use certified virus-free seed next season",
+        ],
+        "treatment_hi": [
+            "संक्रमित पौधे तुरंत उखाड़कर जला दें",
+            "स्वस्थ पौधों को छूने से पहले हाथ और औज़ार धोएँ",
+            "अगले मौसम में प्रमाणित विषाणु-मुक्त बीज लें",
+        ],
+        "est_cost_inr_per_acre": 0,
+    },
+    "yellow_leaf_curl_virus": {
+        "display_en": "Yellow leaf curl virus", "display_hi": "पीला पत्ती मरोड़ विषाणु",
+        "severity": "high",
+        "advice_en": "A virus spread by whitefly. The plant cannot be cured, so control the whitefly to stop it reaching healthy plants.",
+        "advice_hi": "सफ़ेद मक्खी से फैलने वाला विषाणु। पौधा ठीक नहीं हो सकता, इसलिए सफ़ेद मक्खी रोकें ताकि यह स्वस्थ पौधों तक न पहुँचे।",
+        "treatment": [
+            "Remove infected plants from the field",
+            "Diafenthiuron 50% WP @ 1 g/litre against whitefly",
+            "Install yellow sticky traps at 10 per acre",
+        ],
+        "treatment_hi": [
+            "संक्रमित पौधे खेत से हटा दें",
+            "सफ़ेद मक्खी के लिए डायफेंथियुरॉन 50% WP @ 1 ग्राम/लीटर",
+            "प्रति एकड़ 10 पीले चिपचिपे जाल लगाएँ",
+        ],
+        "est_cost_inr_per_acre": 540,
+    },
+    "northern_leaf_blight": {
+        "display_en": "Northern leaf blight", "display_hi": "उत्तरी पत्ती झुलसा",
+        "severity": "high",
+        "advice_en": "Long grey-green cigar-shaped lesions on maize leaves. Spray before it reaches the leaves above the cob.",
+        "advice_hi": "मक्का की पत्तियों पर लंबे भूरे-हरे सिगार जैसे धब्बे। भुट्टे के ऊपर की पत्तियों तक पहुँचने से पहले छिड़काव करें।",
+        "treatment": [
+            "Mancozeb 75% WP @ 2.5 g/litre at first appearance",
+            "Or Propiconazole 25% EC @ 1 ml/litre",
+            "Rotate crops and plough in residue",
+        ],
+        "treatment_hi": [
+            "पहला लक्षण दिखते ही मैंकोज़ेब 75% WP @ 2.5 ग्राम/लीटर",
+            "या प्रोपिकोनाज़ोल 25% EC @ 1 मिली/लीटर",
+            "फसल चक्र अपनाएँ और अवशेष जोतकर मिलाएँ",
+        ],
+        "est_cost_inr_per_acre": 430,
+    },
+    "gray_leaf_spot": {
+        "display_en": "Grey leaf spot", "display_hi": "धूसर पत्ती धब्बा",
+        "severity": "high",
+        "advice_en": "Rectangular grey lesions running along maize leaf veins. Worst in continuous maize with heavy residue.",
+        "advice_hi": "मक्का की पत्ती की शिराओं के साथ आयताकार धूसर धब्बे। लगातार मक्का और अधिक अवशेष वाले खेतों में सबसे ज़्यादा।",
+        "treatment": [
+            "Azoxystrobin 23% SC @ 1 ml/litre",
+            "Plough in residue rather than leaving it on the surface",
+            "Avoid maize after maize on the same plot",
+        ],
+        "treatment_hi": [
+            "एज़ोक्सिस्ट्रोबिन 23% SC @ 1 मिली/लीटर",
+            "अवशेष सतह पर छोड़ने के बजाय जोतकर मिलाएँ",
+            "एक ही खेत में लगातार मक्का न लें",
+        ],
+        "est_cost_inr_per_acre": 480,
+    },
+    "common_rust": {
+        "display_en": "Common rust", "display_hi": "सामान्य रतुआ",
+        "severity": "medium",
+        "advice_en": "Reddish-brown pustules on both leaf surfaces. Usually manageable, but spray if it reaches the upper leaves before tasselling.",
+        "advice_hi": "पत्ती के दोनों तरफ़ लाल-भूरे फफोले। आमतौर पर नियंत्रित रहता है, पर नर मंजरी आने से पहले ऊपरी पत्तियों तक पहुँचे तो छिड़काव करें।",
+        "treatment": [
+            "Propiconazole 25% EC @ 1 ml/litre",
+            "Prefer rust-tolerant hybrids next season",
+        ],
+        "treatment_hi": [
+            "प्रोपिकोनाज़ोल 25% EC @ 1 मिली/लीटर",
+            "अगले मौसम में रतुआ सहनशील संकर किस्म चुनें",
+        ],
+        "est_cost_inr_per_acre": 400,
+    },
+    "scab": {
+        "display_en": "Apple scab", "display_hi": "सेब का स्कैब",
+        "severity": "high",
+        "advice_en": "Olive-brown velvety spots on leaves and fruit. Spray from green-tip stage; once fruit is marked the crop loses market value.",
+        "advice_hi": "पत्तियों और फल पर जैतूनी-भूरे मखमली धब्बे। हरी कली अवस्था से छिड़काव करें; फल पर निशान पड़ने के बाद बाज़ार भाव गिर जाता है।",
+        "treatment": [
+            "Dodine 65% WP @ 0.75 g/litre at green tip",
+            "Mancozeb 75% WP @ 2.5 g/litre in later sprays",
+            "Rake and destroy fallen leaves in winter",
+        ],
+        "treatment_hi": [
+            "हरी कली अवस्था पर डोडीन 65% WP @ 0.75 ग्राम/लीटर",
+            "बाद के छिड़कावों में मैंकोज़ेब 75% WP @ 2.5 ग्राम/लीटर",
+            "सर्दियों में गिरी पत्तियाँ बटोरकर नष्ट करें",
+        ],
+        "est_cost_inr_per_acre": 620,
+    },
+    "black_rot": {
+        "display_en": "Black rot", "display_hi": "काला सड़न",
+        "severity": "high",
+        "advice_en": "Brown leaf lesions and shrivelled dark fruit. Cankered wood carries the fungus over winter, so pruning is part of the cure.",
+        "advice_hi": "भूरे पत्ती धब्बे और सिकुड़े काले फल। रोगग्रस्त लकड़ी में फफूंद सर्दी भर बनी रहती है, इसलिए छँटाई इलाज का हिस्सा है।",
+        "treatment": [
+            "Prune out and burn cankered wood in winter",
+            "Mancozeb 75% WP @ 2.5 g/litre from bud break",
+            "Remove mummified fruit from the plant and ground",
+        ],
+        "treatment_hi": [
+            "सर्दियों में रोगग्रस्त लकड़ी छाँटकर जला दें",
+            "कली फूटने से मैंकोज़ेब 75% WP @ 2.5 ग्राम/लीटर",
+            "सूखे-सिकुड़े फल पौधे और ज़मीन दोनों से हटाएँ",
+        ],
+        "est_cost_inr_per_acre": 580,
+    },
+    "cedar_rust": {
+        "display_en": "Cedar apple rust", "display_hi": "सीडर सेब रतुआ",
+        "severity": "medium",
+        "advice_en": "Bright orange spots on apple leaves. The fungus needs nearby juniper or cedar to complete its cycle.",
+        "advice_hi": "सेब की पत्तियों पर चमकीले नारंगी धब्बे। इस फफूंद को चक्र पूरा करने के लिए पास में जुनिपर या सीडर चाहिए।",
+        "treatment": [
+            "Myclobutanil 10% WP @ 1 g/litre from pink bud",
+            "Remove juniper or cedar within a few hundred metres if possible",
+        ],
+        "treatment_hi": [
+            "गुलाबी कली से मायक्लोबुटानिल 10% WP @ 1 ग्राम/लीटर",
+            "हो सके तो कुछ सौ मीटर के भीतर के जुनिपर या सीडर हटाएँ",
+        ],
+        "est_cost_inr_per_acre": 520,
+    },
+    "esca": {
+        "display_en": "Esca (black measles)", "display_hi": "एस्का (काला खसरा)",
+        "severity": "high",
+        "advice_en": "A trunk disease of grapevine. No spray cures it — manage by pruning practice and removing dead wood.",
+        "advice_hi": "अंगूर की तने की बीमारी। कोई छिड़काव इसे ठीक नहीं करता — छँटाई के तरीके और सूखी लकड़ी हटाकर नियंत्रित करें।",
+        "treatment": [
+            "Prune in dry weather and seal large cuts",
+            "Remove and burn dead wood and severely affected vines",
+            "Disinfect pruning tools between vines",
+        ],
+        "treatment_hi": [
+            "सूखे मौसम में छँटाई करें और बड़े कटान सील करें",
+            "सूखी लकड़ी और बुरी तरह प्रभावित बेलें हटाकर जलाएँ",
+            "हर बेल के बाद छँटाई के औज़ार कीटाणुरहित करें",
+        ],
+        "est_cost_inr_per_acre": 0,
+    },
+    "leaf_blight": {
+        "display_en": "Leaf blight", "display_hi": "पत्ती झुलसा",
+        "severity": "medium",
+        "advice_en": "Irregular brown patches spreading across the leaf. Improve airflow and apply a protectant fungicide.",
+        "advice_hi": "पत्ती पर फैलते अनियमित भूरे धब्बे। हवा का बहाव बढ़ाएँ और सुरक्षात्मक फफूंदनाशक डालें।",
+        "treatment": [
+            "Mancozeb 75% WP @ 2.5 g/litre",
+            "Remove severely affected leaves",
+            "Avoid overhead irrigation",
+        ],
+        "treatment_hi": [
+            "मैंकोज़ेब 75% WP @ 2.5 ग्राम/लीटर",
+            "बुरी तरह प्रभावित पत्तियाँ हटाएँ",
+            "ऊपर से सिंचाई न करें",
+        ],
+        "est_cost_inr_per_acre": 380,
+    },
+    "leaf_scorch": {
+        "display_en": "Leaf scorch", "display_hi": "पत्ती झुलसन",
+        "severity": "medium",
+        "advice_en": "Purple-bordered spots merging into scorched margins on strawberry. Renovate the bed after harvest.",
+        "advice_hi": "स्ट्रॉबेरी पर बैंगनी किनारे वाले धब्बे जो मिलकर झुलसे किनारे बनाते हैं। कटाई के बाद क्यारी की सफ़ाई करें।",
+        "treatment": [
+            "Captan 50% WP @ 2 g/litre",
+            "Mow and remove old foliage after harvest",
+            "Improve drainage and spacing",
+        ],
+        "treatment_hi": [
+            "कैप्टान 50% WP @ 2 ग्राम/लीटर",
+            "कटाई के बाद पुरानी पत्तियाँ काटकर हटाएँ",
+            "जल निकासी और दूरी सुधारें",
+        ],
+        "est_cost_inr_per_acre": 420,
+    },
+    "citrus_greening": {
+        "display_en": "Citrus greening (HLB)", "display_hi": "नींबू हरापन रोग (HLB)",
+        "severity": "high",
+        "advice_en": "A bacterial disease spread by citrus psyllid. Infected trees cannot be cured and remain a source for the whole orchard.",
+        "advice_hi": "सिट्रस सिल्ला से फैलने वाला जीवाणु रोग। संक्रमित पेड़ ठीक नहीं होते और पूरे बाग़ के लिए संक्रमण का स्रोत बने रहते हैं।",
+        "treatment": [
+            "Remove and destroy confirmed infected trees",
+            "Control psyllid with Imidacloprid 17.8% SL @ 0.5 ml/litre",
+            "Plant only certified disease-free saplings",
+        ],
+        "treatment_hi": [
+            "पुष्ट संक्रमित पेड़ हटाकर नष्ट करें",
+            "इमिडाक्लोप्रिड 17.8% SL @ 0.5 मिली/लीटर से सिल्ला नियंत्रित करें",
+            "केवल प्रमाणित रोगमुक्त पौध लगाएँ",
+        ],
+        "est_cost_inr_per_acre": 600,
+    },
+    # keep your existing entries, renamed:
+    #   leaf_rust → "rust"  (only if your data has a plain 'rust' class)
+    #   early_blight, powdery_mildew, bacterial_spot, nitrogen_deficiency
+    #   stay as-is — their keys already match the PlantVillage suffixes.
+}
 
 # Used only if the model returns a class label with no matching KB entry
 # (e.g. a custom-trained model with extra classes). Deliberately gives no
@@ -52,6 +421,30 @@ _UNKNOWN_CLASS_FALLBACK: Dict[str, object] = {
     "est_cost_inr_per_acre": 0,
 }
 
+# PlantVillage labels are <crop>_<disease>. Treatment depends on the pathogen,
+# not the crop, so resolve the disease portion and key advice on that.
+CROP_PREFIXES = (
+    "apple", "blueberry", "cherry", "corn", "grape", "orange", "peach",
+    "pepper", "potato", "raspberry", "soybean", "squash", "strawberry", "tomato",
+)
+
+CROP_DISPLAY = {
+    "apple": ("Apple", "सेब"), "blueberry": ("Blueberry", "ब्लूबेरी"),
+    "cherry": ("Cherry", "चेरी"), "corn": ("Maize", "मक्का"),
+    "grape": ("Grape", "अंगूर"), "orange": ("Orange", "संतरा"),
+    "peach": ("Peach", "आड़ू"), "pepper": ("Chilli/Capsicum", "मिर्च"),
+    "potato": ("Potato", "आलू"), "raspberry": ("Raspberry", "रसभरी"),
+    "soybean": ("Soybean", "सोयाबीन"), "squash": ("Squash", "कद्दू"),
+    "strawberry": ("Strawberry", "स्ट्रॉबेरी"), "tomato": ("Tomato", "टमाटर"),
+}
+
+
+def split_label(label: str) -> tuple[str, str]:
+    """'tomato_late_blight' → ('tomato', 'late_blight')."""
+    for crop in CROP_PREFIXES:
+        if label.startswith(crop + "_"):
+            return crop, label[len(crop) + 1:]
+    return "", label
 
 @dataclass
 class Diagnosis:
@@ -229,23 +622,32 @@ class LeafDiseaseClassifier:
         proba = self.pipeline.predict_proba(vec.reshape(1, -1))[0]
         idx = int(np.argmax(proba))
         label = self.classes[idx]
-        # kb = TREATMENT_KB.get(label, TREATMENT_KB["healthy"])
-
-        # Fall back to a generic "unknown issue" entry (not a specific
-        # treatment) if the model somehow returns a class this KB doesn't
-        # recognise — never guess a chemical/dosage for an unlabelled class.
-        kb = TREATMENT_KB.get(label, _UNKNOWN_CLASS_FALLBACK)
-        
         hi = language == "hi"
+
+        crop_key, disease_key = split_label(label)
+        kb = TREATMENT_KB.get(disease_key)
+
+        if kb is None:
+            # Unknown pathogen: say so honestly rather than defaulting to
+            # "healthy", which would tell a farmer with a diseased crop to
+            # do nothing.
+            kb = TREATMENT_KB["_unknown"]
+
+        crop_label = ""
+        if crop_key:
+            crop_label = CROP_DISPLAY.get(crop_key, (crop_key.title(), crop_key))[1 if hi else 0]
+
+        base_name = str(kb["display_hi"] if hi else kb["display_en"])
+        display = f"{crop_label} — {base_name}" if crop_label else base_name
 
         return Diagnosis(
             label=label,
-            display_name=str(kb["display_hi"] if hi else kb["display_en"]),
+            display_name=display,
             confidence=round(float(proba[idx]), 4),
             severity=str(kb["severity"]),
             advice=str(kb["advice_hi"] if hi else kb["advice_en"]),
-            treatment=list(kb["treatment_hi"] if hi else kb["treatment"]),  # type: ignore[arg-type]
-            est_cost_inr_per_acre=int(kb["est_cost_inr_per_acre"]),  # type: ignore[arg-type]
+            treatment=list(kb["treatment_hi"] if hi else kb["treatment"]),
+            est_cost_inr_per_acre=int(kb["est_cost_inr_per_acre"]),
             probabilities={c: round(float(p), 4) for c, p in zip(self.classes, proba)},
             lesion_coverage_pct=round(coverage, 2),
             model_version=self.version,

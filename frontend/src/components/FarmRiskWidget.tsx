@@ -142,7 +142,6 @@ export default function FarmRiskWidget({ lat, lon, crop, state, boundary, langua
           <Satellite size={16} />
           <h4 className="text-xs font-semibold">{t('risk.ndvi.title')}</h4>
         </div>
-
         {nd.available && nd.current ? (
           <>
             <div className="grid grid-cols-3 gap-px bg-leaf-50">
@@ -178,7 +177,14 @@ export default function FarmRiskWidget({ lat, lon, crop, state, boundary, langua
                 </div>
               </div>
             )}
-
+            {nd.current && (() => {
+              const days = Math.round((Date.now() - new Date(nd.current.from).getTime()) / 86400000);
+              return days > 20 ? (
+                <p className="bg-harvest-400/12 px-3 py-1.5 text-[10px] text-harvest-600">
+                  {t('risk.ndvi.stale', { days })}
+                </p>
+              ) : null;
+            })()}
             {nd.current.validPixelPct < 70 && (
               <p className="bg-soil-50 px-3 py-1.5 text-[10px] text-soil-700">{t('risk.ndvi.cloudy')}</p>
             )}

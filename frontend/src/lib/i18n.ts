@@ -158,6 +158,13 @@ export const STRINGS: Record<Locale, Dict> = {
     'mandi.uplift': 'You earn {amount} more than the local offer — the trip is worth it.',
     'mandi.upliftClose': '{amount} more than the local offer, but the two mandis are close — the nearer one is a fair choice.',
     'mandi.stayLocal': 'Selling locally is better — transport eats the gain.',
+    'mandi.findNearby': 'Find mandis near my field',
+    'mandi.searching': 'Finding nearby mandis…',
+    'mandi.radius': 'Search distance',
+    'mandi.editManually': 'Enter manually',
+    'mandi.backToAuto': 'Find automatically',
+    'mandi.approxDistance': 'Distance estimated from district centre',
+    'mandi.demoData': 'Demo prices',
 
     // ── disease ──
     'dz.title': 'Leaf Disease Diagnosis',
@@ -205,7 +212,14 @@ export const STRINGS: Record<Locale, Dict> = {
     'risk.detail.priceVolatile': 'Prices vary {spread}% between markets — compare net earnings before you sell.',
     'risk.detail.priceStable': 'Market prices are steady across nearby mandis.',
 
+    'rag.grounded': 'From official scheme documents',
+    'rag.official': 'Official source',
+    'rag.sources': 'Sources',
+    'rag.liveOnly': 'From a live web search — verify on the official portal before acting.',
+
     // ── pmfby ──
+    'pmfby.checkTitle': 'Claim eligibility check',
+    'pmfby.checking': 'Checking against scheme rules…',
     'pmfby.autofill': 'Fetch from satellite',
     'pmfby.autofilling': 'Reading satellite images…',
     'pmfby.autofillOk': 'Filled from Sentinel-2 imagery around your event date.',
@@ -231,6 +245,7 @@ export const STRINGS: Record<Locale, Dict> = {
     'pmfby.cause.pest': 'Pest attack',
     'pmfby.cause.disease': 'Disease outbreak',
     'pmfby.cause.unseasonal': 'Unseasonal rain',
+    'pmfby.ndviPlaceholder': 'These are example values. Use "Fetch from satellite" for observed figures before submitting.',
 
     // ── voice + chat ──
     'voice.ph': 'Speak or type…',
@@ -265,6 +280,7 @@ export const STRINGS: Record<Locale, Dict> = {
     'risk.factor.price': 'Price volatility',
     'risk.actions': 'Do this fir  st',
     'risk.window': 'Next 7 days',
+    'risk.ndvi.stale': 'Last clear satellite image is {days} days old — monsoon cloud is blocking the view.',
   },
 
   hi: {
@@ -414,6 +430,14 @@ export const STRINGS: Record<Locale, Dict> = {
     'mandi.uplift': 'गाँव के भाव से {amount} ज़्यादा मिलेगा — जाना फ़ायदेमंद है।',
     'mandi.upliftClose': 'गाँव से {amount} ज़्यादा, पर दोनों मंडियों में फ़र्क़ कम है — नज़दीकी मंडी ठीक रहेगी।',
     'mandi.stayLocal': 'गाँव में ही बेचें — ढुलाई फ़ायदा खा जाएगी।',
+    'mandi.findNearby': 'मेरे खेत के पास की मंडियाँ खोजें',
+    'mandi.searching': 'नज़दीकी मंडियाँ खोजी जा रही हैं…',
+    'mandi.radius': 'खोज की दूरी',
+    'mandi.editManually': 'ख़ुद भरें',
+    'mandi.backToAuto': 'अपने आप खोजें',
+    'mandi.approxDistance': 'दूरी ज़िला केंद्र से अनुमानित',
+    'mandi.demoData': 'नमूना भाव',
+
 
     'dz.title': 'पत्ती रोग जाँच',
     'dz.instruction': 'एक ही पत्ती की साफ़ फोटो लें — दिन की रोशनी में, पत्ती पूरी दिखे।',
@@ -460,6 +484,14 @@ export const STRINGS: Record<Locale, Dict> = {
     'risk.detail.priceVolatile': 'मंडियों में भाव {spread}% तक अलग है — बेचने से पहले असली कमाई की तुलना करें।',
     'risk.detail.priceStable': 'आसपास की मंडियों में भाव स्थिर हैं।',
     
+    'rag.grounded': 'आधिकारिक योजना दस्तावेज़ों से',
+    'rag.official': 'सरकारी स्रोत',
+    'rag.sources': 'स्रोत',
+    'rag.liveOnly': 'लाइव वेब खोज से — कार्रवाई से पहले आधिकारिक पोर्टल पर पुष्टि करें।',
+
+    'pmfby.ndviPlaceholder': 'ये उदाहरण के मान हैं। जमा करने से पहले "सैटेलाइट से भरें" दबाकर असली आँकड़े लें।',
+    'pmfby.checkTitle': 'दावा पात्रता जाँच',
+    'pmfby.checking': 'योजना नियमों से मिलान हो रहा है…',
     'pmfby.autofill': 'सैटेलाइट से भरें',
     'pmfby.autofilling': 'सैटेलाइट तस्वीरें पढ़ी जा रही हैं…',
     'pmfby.autofillOk': 'आपकी घटना की तारीख़ के आसपास की Sentinel-2 तस्वीरों से भरा गया।',
@@ -500,6 +532,7 @@ export const STRINGS: Record<Locale, Dict> = {
     'risk.factor.price': 'भाव में उतार-चढ़ाव',
     'risk.actions': 'सबसे पहले यह करें',
     'risk.window': 'अगले 7 दिन',
+    'risk.ndvi.stale': 'आख़िरी साफ़ सैटेलाइट तस्वीर {days} दिन पुरानी है — मानसून के बादल दृश्य रोक रहे हैं।',
 
     'voice.ph': 'बोलिए या लिखिए…',
     'voice.listening': '🎙️ सुन रहा हूँ… बोलिए',

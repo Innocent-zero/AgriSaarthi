@@ -80,8 +80,7 @@ router.post('/assess', optionalAuth, async (req: Request, res: Response, next: N
     const w = { ...BASE_WEIGHTS };
 
     // ── 1. Vegetation vigour, from the NDVI anomaly ──
-    if (ndvi.available && ndvi.anomalyZ !== null && ndvi.baselineSamples >= 2) {
-      // A negative z means the crop is behind where it normally is at this
+    if (ndvi.available && !ndvi.mixedPixels && ndvi.anomalyZ !== null && ndvi.baselineSamples >= 2) {
       // point in the calendar. −2σ is a serious departure from normal.
       const z = ndvi.anomalyZ;
       const score = clamp(z >= 0 ? Math.max(0, 12 - z * 8) : Math.min(100, -z * 34));

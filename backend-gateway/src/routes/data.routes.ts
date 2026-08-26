@@ -5,6 +5,7 @@ import FormData from 'form-data';
 import { z } from 'zod';
 import { swytchcode } from '../services/swytchcodeService';
 import { optionalAuth } from '../middleware/auth';
+import { sentinelHub } from '../services/sentinelHubServices';
 
 const router = Router();
 const upload = multer({
@@ -98,6 +99,93 @@ router.post('/schemes', optionalAuth, async (req: Request, res: Response, next: 
       .parse(req.body);
     const { data } = await axios.post(`${ML()}/api/v1/schemes`, body, { timeout: 35000 });
     res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/v1/data/rag — direct knowledge-base query. */
+router.post('/rag', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      query: z.string().min(2).max(300),
+      language: z.enum(['hi', 'en']).default('hi'),
+      schemeId: z.string().max(40).optional(),
+      k: z.number().int().min(1).max(8).default(4),
+    }).parse(req.body);
+
+    const { data } = await axios.post(`${ML()}/api/v1/rag/query`, {
+      query: body.query,
+      language: body.language,
+      scheme_id: body.schemeId,
+      k: body.k,
+    }, { timeout: 20000 });
+
+    res.json(data);
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.code === 'ECONNREFUSED') {
+      res.status(503).json({
+        success: false,
+        error: 'Knowledge service is not running. Start it with: make ml',
+        code: 'ML_SERVICE_DOWN',
+      });
+      return;
+    }
+    next(err);
+  }
+});
+
+/** POST /api/v1/data/pmfby/claim-check — grounded eligibility screen. */
+router.post('/pmfby/claim-check', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      cause: z.string().min(2).max(200),
+      eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      estimatedLossPct: z.number().min(0).max(100),
+      language: z.enum(['hi', 'en']).default('hi'),
+    }).parse(req.body);
+
+    const { data } = await axios.post(`${ML()}/api/v1/pmfby/claim-check`, {
+      cause: body.cause,
+      event_date: body.eventDate,
+      estimated_loss_pct: body.estimatedLossPct,
+      language: body.language,
+    }, { timeout: 20000 });
+
+    res.json(data);
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.code === 'ECONNREFUSED') {
+      res.status(503).json({
+        success: false,
+        error: 'Knowledge service is not running. Start it with: make ml',
+        code: 'ML_SERVICE_DOWN',
+      });
+      return;
+    }
+    next(err);
+  }
+});
+
+/** POST /api/v1/data/ndvi/event — observed pre/post NDVI around a damage date. */
+router.post('/ndvi/event', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      lat: z.number().min(-90).max(90),
+      lon: z.number().min(-180).max(180),
+      eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      boundary: z.array(z.object({
+        lat: z.number().min(-90).max(90),
+        lon: z.number().min(-180).max(180),
+      })).max(60).optional(),
+    }).parse(req.body);
+
+    const pair = await sentinelHub.getEventPair(
+      { lat: body.lat, lon: body.lon },
+      body.boundary,
+      body.eventDate,
+    );
+
+    res.json({ success: true, ...pair });
   } catch (err) {
     next(err);
   }

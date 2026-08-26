@@ -8,10 +8,9 @@
  * The public surface (getWeather / getSoil / getMandiPrices) is identical to the
  * Swytchcode-backed version, so swapping back is a one-file change.
  */
-import axios from 'axios';
 import { withCache } from '../config/redis';
 import { sentinelHub, NdviAnalysis, LatLon } from './sentinelHubServices';
-
+import axios, { AxiosInstance } from 'axios';
 export interface Localised {
   code: string;
   params?: Record<string, string | number>;
@@ -122,15 +121,68 @@ const SEED_TICKERS: Record<string, Array<{ market: string; district: string; mod
 };
 
 class DataExecutionService {
-  /** Kept for API compatibility with the Swytchcode-backed build. */
-  readonly mode = 'direct' as const;
+  private readonly swytch: AxiosInstance | null;
+  readonly mode: 'swytchcode' | 'direct';
+
+  constructor() {
+    const key = process.env.SWYTCHCODE_API_KEY;
+    const enabled = process.env.SWYTCHCODE_ENABLED !== 'false' && Boolean(key);
+    this.mode = enabled ? 'swytchcode' : 'direct';
+    this.swytch = enabled
+      ? axios.create({
+          baseURL: process.env.SWYTCHCODE_BASE_URL || 'https://api.swytchcode.com/v1',
+          timeout: Number(process.env.SWYTCHCODE_TIMEOUT_MS || 20000),
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'X-Client': 'agrisaarthi/1.0',
+          },
+        })
+      : null;
+  }
+
+  /**
+   * Declarative execution through Swytchcode. Returns null on any failure so
+   * every caller transparently falls through to direct provider access —
+   * a rural user must never lose their advisory because a middleware layer
+   * had a bad minute.
+   */
+  private async execute<T>(
+    connector: string,
+    operation: string,
+    params: Record<string, unknown>,
+  ): Promise<T | null> {
+    if (!this.swytch) return null;
+    try {
+      const { data } = await this.swytch.post<{ data?: T; result?: T; output?: T }>('/execute', {
+        connector,
+        operation,
+        parameters: params,
+      });
+      return (data.data ?? data.result ?? data.output ?? null) as T | null;
+    } catch (err) {
+      const msg = axios.isAxiosError(err)
+        ? `${err.response?.status ?? ''} ${err.message}`
+        : String(err);
+      console.warn(`[swytchcode] ${connector}.${operation} failed → direct. ${msg}`);
+      return null;
+    }
+  }
 
   // ─────────────────────────── Weather ───────────────────────────
   async getWeather(lat: number, lon: number): Promise<WeatherSnapshot> {
     const ttl = Number(process.env.CACHE_TTL_WEATHER || 1800);
     const key = `wx:     ${lat.toFixed(3)}:${lon.toFixed(3)}`;
     const { data } = await withCache<WeatherSnapshot>(key, ttl, async () => {
-      const raw = await this.fetchOpenMeteo(lat, lon);
+      const viaSwytch = await this.execute<Record<string, unknown>>('open-meteo', 'forecast', {
+        latitude: lat,
+        longitude: lon,
+        current: 'temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code',
+        daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max',
+        timezone: 'Asia/Kolkata',
+        forecast_days: 7,
+      });
+      const raw = viaSwytch ?? (await this.fetchOpenMeteo(lat, lon));
       return this.normaliseWeather(raw, lat, lon);
     });
     return data;
@@ -223,12 +275,16 @@ class DataExecutionService {
     const key = `soil:${lat.toFixed(3)}:${lon.toFixed(3)}`;
     const { data } = await withCache<SoilSnapshot>(key, ttl, async () => {
       try {
-        const raw = await this.fetchSoilGrids(lat, lon);
+        const viaSwytch = await this.execute<Record<string, unknown>>('soilgrids', 'properties_query', {
+          lat, lon,
+          property: ['phh2o', 'soc', 'nitrogen', 'clay', 'sand', 'silt', 'cec'],
+          depth: '0-5cm',
+          value: 'mean',
+        });
+        const raw = viaSwytch ?? (await this.fetchSoilGrids(lat, lon));
         return this.normaliseSoil(raw, lat, lon);
       } catch (err) {
-        // SoilGrids rate-limits aggressively and occasionally times out. A typical
-        // Indo-Gangetic alluvial profile keeps the NPK calculator usable meanwhile.
-        console.warn('[soil] SoilGrids unavailable, using regional default:', (err as Error).message);
+        console.warn('[soil] unavailable, using regional default:', (err as Error).message);
         return this.regionalDefault(lat, lon);
       }
     });
@@ -318,17 +374,22 @@ class DataExecutionService {
     const ttl = Number(process.env.CACHE_TTL_MANDI || 3600);
     const key = `mandi:${state}:${district ?? 'all'}:${commodity}`.toLowerCase();
     const { data } = await withCache<MandiTicker[]>(key, ttl, async () => {
-      if (!process.env.DATA_GOV_IN_API_KEY) {
-        return this.seedTickers(state, commodity, district);
+      const viaSwytch = await this.execute<Record<string, unknown>>('data-gov-in', 'mandi_prices', {
+        state, district, commodity, limit: 100,
+      });
+      if (viaSwytch) {
+        const live = this.normaliseTickers(viaSwytch);
+        if (live.length) return live;
       }
-      try {
-        const raw = await this.fetchAgmarknet(state, commodity, district);
-        const live = this.normaliseTickers(raw);
-        return live.length > 0 ? live : this.seedTickers(state, commodity, district);
-      } catch (err) {
-        console.warn('[mandi] AGMARKNET unavailable, using seed data:', (err as Error).message);
-        return this.seedTickers(state, commodity, district);
+      if (process.env.DATA_GOV_IN_API_KEY) {
+        try {
+          const live = this.normaliseTickers(await this.fetchAgmarknet(state, commodity, district));
+          if (live.length) return live;
+        } catch (err) {
+          console.warn('[mandi] AGMARKNET unavailable:', (err as Error).message);
+        }
       }
+      return this.seedTickers(state, commodity, district);
     });
     return data;
   }

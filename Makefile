@@ -42,7 +42,8 @@ web:
 	cd $(WEB_DIR) && npm run build
 
 train:
-	cd $(ML_DIR) && .venv/Scripts/python.exe -m app.models.train_svm_mock --samples 240
+	cd $(ML_DIR) && ../$(VENV_PY) -m app.models.train_svm_mock --samples 240
+	cd $(ML_DIR) && ../$(VENV_PY) -m app.scripts.ingest
 
 ml:
 	cd $(ML_DIR) && .venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port $${ML_SERVICE_PORT:-8000} --reload
@@ -68,3 +69,9 @@ clean:
 	rm -rf $(WEB_DIR)/.next $(WEB_DIR)/node_modules $(WEB_DIR)/public/sw.js $(WEB_DIR)/public/workbox-*.js
 	rm -rf $(ML_DIR)/.venv $(ML_DIR)/app/models/artifacts
 	@echo "✓ cleaned"
+
+ingest:
+	cd $(ML_DIR) && ../$(VENV_PY) -m app.scripts.ingest
+
+ingest-pdf:
+	cd $(ML_DIR) && ../$(VENV_PY) -m app.scripts.ingest --pdf-dir data/scheme_pdfs

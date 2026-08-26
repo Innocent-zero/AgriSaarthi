@@ -32,6 +32,7 @@ export interface NdviPoint {
 
 export interface NdviAnalysis {
   available: boolean;
+  mixedPixels?: boolean;
   reason?: string;
   series: NdviPoint[];          // full history, oldest first
   current: NdviPoint | null;    // most recent usable observation
@@ -61,7 +62,11 @@ function setup() {
   };
 }
 function evaluatePixel(s) {
-  var bad = [0, 1, 3, 8, 9, 10, 11];
+  // 0 no-data, 1 saturated, 3 shadow, 7 low-prob cloud/haze,
+  // 8 medium cloud, 9 high cloud, 10 thin cirrus, 11 snow.
+  // 7 and 10 are included deliberately: haze depresses NDVI and would
+  // otherwise read as crop damage in an insurance claim.
+  var bad = [0, 1, 3, 7, 8, 9, 10, 11];
   var valid = s.dataMask;
   for (var i = 0; i < bad.length; i++) {
     if (s.SCL === bad[i]) { valid = 0; break; }
@@ -69,7 +74,7 @@ function evaluatePixel(s) {
   var denom = s.B08 + s.B04;
   var ndvi = denom === 0 ? 0 : (s.B08 - s.B04) / denom;
   return { ndvi: [ndvi], dataMask: [valid] };
-}`;
+}`
 
 const MIN_VALID_PCT = 40;      // below this the interval is too cloudy to trust
 const TREND_WINDOW = 4;        // intervals used for the slope
@@ -275,6 +280,7 @@ class SentinelHubService {
       anomalyZ: null,
       trendPerInterval: null,
       dropFromPeakPct: null,
+
       seasonPeak: null,
       source: 'sentinel-hub',
       fetchedAt: new Date().toISOString(),
@@ -287,6 +293,12 @@ class SentinelHubService {
 
     const current = series[series.length - 1];
     base.current = current;
+    if (current.stDev > 0.18 || current.mean < 0.2) {
+      base.mixedPixels = true;
+      base.reason = current.mean < 0.2
+        ? `Mean NDVI ${current.mean.toFixed(2)} indicates bare or built-up land rather than a standing crop.`
+        : `High variation within the field (σ ${current.stDev.toFixed(2)}) suggests the boundary includes non-crop area.`;
+    }
     base.previous = series.length >= 2 ? series[series.length - 2] : null;
 
     // ── phenology-aware baseline: same calendar window, earlier years ──
@@ -351,9 +363,17 @@ class SentinelHubService {
     centre: LatLon,
     boundary: LatLon[] | undefined,
     eventDateIso: string,
-  ): Promise<{ pre: NdviPoint | null; post: NdviPoint | null; lossPct: number | null }> {
+  ): Promise<{
+    pre: NdviPoint | null;
+    post: NdviPoint | null;
+    lossPct: number | null;
+    usable: boolean;
+    reason?: string;
+  }> {
     const analysis = await this.getNdviAnalysis(centre, boundary);
-    if (!analysis.available) return { pre: null, post: null, lossPct: null };
+    if (!analysis.available) {
+      return { pre: null, post: null, lossPct: null, usable: false, reason: analysis.reason };
+    }
 
     const event = eventDateIso.slice(0, 10);
     const before = analysis.series.filter((p) => p.to <= event);
@@ -362,13 +382,42 @@ class SentinelHubService {
     const pre = before.length ? before[before.length - 1] : null;
     const post = after.length ? after[0] : null;
 
-    const lossPct =
-      pre && post && pre.mean > 0.05
-        ? Number((((pre.mean - post.mean) / pre.mean) * 100).toFixed(1))
-        : null;
+    if (!pre || !post) {
+      return {
+        pre, post, lossPct: null, usable: false,
+        reason: !post
+          ? 'No cloud-free image yet after the event date. Sentinel-2 cannot see through monsoon cloud — try again in a few days.'
+          : 'No cloud-free image found before the event date.',
+      };
+    }
 
-    return { pre, post, lossPct };
+    // Below ~0.25 the polygon is mostly bare soil or built-up land, not crop.
+    // A percentage decline computed from that baseline is meaningless, and
+    // putting it in an insurance passbook would misrepresent the evidence.
+    if (pre.mean < 0.25) {
+      return {
+        pre, post, lossPct: null, usable: false,
+        reason: `Pre-event NDVI of ${pre.mean.toFixed(2)} is too low to represent a standing crop. Draw your field boundary precisely and try again.`,
+      };
+    }
+
+    // Gaps beyond ~40 days mean the "decline" is mostly normal phenology.
+    const gapDays = Math.round(
+      (new Date(post.from).getTime() - new Date(pre.to).getTime()) / 86_400_000,
+    );
+    if (gapDays > 40) {
+      return {
+        pre, post, lossPct: null, usable: false,
+        reason: `The nearest clear images are ${gapDays} days apart, too far to attribute the change to this event.`,
+      };
+    }
+
+    return {
+      pre,
+      post,
+      lossPct: Number((((pre.mean - post.mean) / pre.mean) * 100).toFixed(1)),
+      usable: true,
+    };
   }
 }
-
 export const sentinelHub = new SentinelHubService();

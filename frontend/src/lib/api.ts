@@ -172,6 +172,68 @@ export function friendlyError(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong.';
 }
 
+export interface RagCitation {
+  scheme_id: string;
+  title: string;
+  heading: string;
+  source_url: string;
+  score: number;
+}
+
+export interface SchemeAnswer {
+  query: string;
+  summary: string;
+  results: Array<{
+    title: string; url: string; snippet: string;
+    domain: string; relevance: number; official: boolean;
+  }>;
+  citations: RagCitation[];
+  follow_up_questions: string[];
+  source: string;
+  grounded: boolean;
+  confidence: number;
+}
+
+export interface ClaimFinding {
+  key: string;
+  status: 'ok' | 'warning' | 'info';
+  text: string;
+}
+
+export interface ClaimCheck {
+  findings: ClaimFinding[];
+  guidance: string;
+  citations: RagCitation[];
+  within_72h: boolean;
+  hours_elapsed: number;
+  localised_peril: boolean;
+}
+
+export interface DiscoveredMandi {
+  id: string;
+  name: string;
+  district: string;
+  lat: number;
+  lon: number;
+  distanceKm: number;
+  precision: 'market' | 'district' | 'none';
+  pricePerQuintal: number;
+  minPrice: number;
+  maxPrice: number;
+  arrivalDate: string;
+  feedSource: string;
+}
+
+export interface MandiAutoResult {
+  location: { state?: string; district?: string; village?: string };
+  discovered: DiscoveredMandi[];
+  skipped: number;
+  radiusKm: number;
+  feedSource: 'agmarknet' | 'demo-seed' | 'mixed';
+  ranking: MandiResponse | null;
+  warnings: string[];
+}
+
 export const api = {
   async requestToken(phone: string, name?: string, district?: string, lang: 'hi' | 'en' = 'hi') {
     const { data } = await client.post<{ success: boolean; token: string }>('/agent/auth/token', {
@@ -229,6 +291,8 @@ export const api = {
       pre: NdviObservation | null;
       post: NdviObservation | null;
       lossPct: number | null;
+      usable: boolean;
+      reason?: string;
     }>('/data/ndvi/event', payload);
     return data;
   },
@@ -238,9 +302,28 @@ export const api = {
     return data;
   },
 
+    async claimCheck(payload: {
+    cause: string; eventDate: string; estimatedLossPct: number; language: 'hi' | 'en';
+  }) {
+    const { data } = await client.post<{ success: boolean } & ClaimCheck>(
+      '/data/pmfby/claim-check', payload,
+    );
+    return data as ClaimCheck;
+  },
+
   async pmfbyReport(payload: Record<string, unknown>): Promise<Blob> {
     const { data } = await client.post('/data/pmfby/report', payload, { responseType: 'blob' });
     return data as Blob;
+  },
+
+    async mandiAuto(payload: {
+    lat: number; lon: number; crop: string; volumeQuintals: number;
+    radiusKm?: number; localPricePerQuintal?: number;
+    state?: string; district?: string;
+    vehicle?: Record<string, number>;
+  }) {
+    const { data } = await client.post<{ success: boolean } & MandiAutoResult>('/mandi/auto', payload);
+    return data as MandiAutoResult;
   },
 };
 
