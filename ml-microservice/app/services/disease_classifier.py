@@ -20,122 +20,36 @@ import joblib
 import numpy as np
 from skimage.feature import graycomatrix, graycoprops
 
+from app.models.plant_village_labels import ALL_PLANT_VILLAGE_CLASSES
+from app.services.plant_village_treatments import PLANT_VILLAGE_TREATMENT_KB
+
 logger = logging.getLogger(__name__)
 
 TARGET_SIZE = (256, 256)
 
-CLASS_LABELS: List[str] = [
-    "healthy",
-    "leaf_rust",
-    "early_blight",
-    "powdery_mildew",
-    "bacterial_spot",
-    "nitrogen_deficiency",
-]
+# Default class list used only when no trained artifact exists yet (the
+# synthetic-fallback path in _load()). Once a real model is trained from a
+# dataset, the actual classes come from the saved bundle instead — see
+# LeafDiseaseClassifier._load().
+CLASS_LABELS: List[str] = ALL_PLANT_VILLAGE_CLASSES
 
 # Agronomic knowledge base — the classifier output is only useful when paired
 # with a treatment a farmer can actually buy at the local krishi kendra.
-TREATMENT_KB: Dict[str, Dict[str, object]] = {
-    "healthy": {
-        "display_en": "Healthy leaf",
-        "display_hi": "स्वस्थ पत्ती",
-        "severity": "none",
-        "advice_en": "No disease detected. Continue your normal schedule and scout again in 5–7 days.",
-        "advice_hi": "कोई बीमारी नहीं मिली। सामान्य कार्यक्रम जारी रखें और 5–7 दिन बाद दोबारा जाँचें।",
-        "treatment": [],
-        "treatment_hi": [],
-        "est_cost_inr_per_acre": 0,
-    },
-    "leaf_rust": {
-        "display_en": "Leaf rust",
-        "display_hi": "पत्ती का रतुआ (रस्ट)",
-        "severity": "high",
-        "advice_en": "Orange-brown pustules confirm rust. Spray within 48 hours; rust can cut yield by 20–30% if it reaches the flag leaf.",
-        "advice_hi": "नारंगी-भूरे धब्बे रतुआ के हैं। 48 घंटे में छिड़काव करें, वरना 20–30% तक उपज घट सकती है।",
-        "treatment": [
-            "Propiconazole 25% EC @ 1 ml/litre, full leaf coverage",
-            "Repeat after 12–15 days if new pustules appear",
-            "Avoid spraying if wind exceeds 15 km/h",
-        ],
-        "treatment_hi": [
-            "प्रोपिकोनाज़ोल 25% EC @ 1 मिली/लीटर, पूरी पत्ती भिगोएँ",
-            "12–15 दिन बाद नए धब्बे दिखें तो दोबारा छिड़कें",
-            "हवा 15 किमी/घंटा से तेज़ हो तो छिड़काव न करें",
-        ],
-        "est_cost_inr_per_acre": 420,
-    },
-    "early_blight": {
-        "display_en": "Early blight",
-        "display_hi": "अगेती झुलसा",
-        "severity": "high",
-        "advice_en": "Concentric brown lesions indicate early blight. Remove infected lower leaves and spray a protectant fungicide.",
-        "advice_hi": "गोल भूरे धब्बे अगेती झुलसा दर्शाते हैं। नीचे की संक्रमित पत्तियाँ हटाएँ और फफूंदनाशक छिड़कें।",
-        "treatment": [
-            "Mancozeb 75% WP @ 2.5 g/litre",
-            "Alternate with Chlorothalonil to prevent resistance",
-            "Improve row spacing for airflow",
-        ],
-        "treatment_hi": [
-            "मैंकोज़ेब 75% WP @ 2.5 ग्राम/लीटर",
-            "प्रतिरोध रोकने के लिए क्लोरोथैलोनिल से बदल-बदलकर छिड़कें",
-            "हवा के लिए कतारों की दूरी बढ़ाएँ",
-        ],
-        "est_cost_inr_per_acre": 380,
-    },
-    "powdery_mildew": {
-        "display_en": "Powdery mildew",
-        "display_hi": "चूर्णिल आसिता",
-        "severity": "medium",
-        "advice_en": "White powdery growth on the upper surface. It spreads fastest in dry days with humid nights.",
-        "advice_hi": "पत्ती के ऊपर सफ़ेद पाउडर जैसा फैलाव। सूखे दिन और नम रात में तेज़ी से फैलता है।",
-        "treatment": [
-            "Wettable sulphur 80% WP @ 2 g/litre",
-            "Or Hexaconazole 5% EC @ 1 ml/litre",
-            "Spray in the evening to avoid leaf scorch",
-        ],
-        "treatment_hi": [
-            "घुलनशील गंधक 80% WP @ 2 ग्राम/लीटर",
-            "या हेक्साकोनाज़ोल 5% EC @ 1 मिली/लीटर",
-            "पत्ती झुलसने से बचाने के लिए शाम को छिड़कें",
-        ],
-        "est_cost_inr_per_acre": 260,
-    },
-    "bacterial_spot": {
-        "display_en": "Bacterial leaf spot",
-        "display_hi": "जीवाणु पत्ती धब्बा",
-        "severity": "high",
-        "advice_en": "Water-soaked dark spots with yellow halos. Fungicides will not work — you need a copper-based bactericide.",
-        "advice_hi": "पीले घेरे वाले गीले काले धब्बे। फफूंदनाशक बेअसर है — कॉपर आधारित दवा चाहिए।",
-        "treatment": [
-            "Copper oxychloride 50% WP @ 3 g/litre",
-            "Add Streptomycin sulphate @ 0.1 g/litre where permitted",
-            "Stop overhead irrigation immediately",
-        ],
-        "treatment_hi": [
-            "कॉपर ऑक्सीक्लोराइड 50% WP @ 3 ग्राम/लीटर",
-            "जहाँ अनुमति हो, स्ट्रेप्टोमाइसिन सल्फेट @ 0.1 ग्राम/लीटर मिलाएँ",
-            "ऊपर से पानी देना तुरंत बंद करें",
-        ],
-        "est_cost_inr_per_acre": 450,
-    },
-    "nitrogen_deficiency": {
-        "display_en": "Nitrogen deficiency",
-        "display_hi": "नाइट्रोजन की कमी",
-        "severity": "medium",
-        "advice_en": "Uniform yellowing starting from older leaves — this is hunger, not disease. Do not spend on fungicide.",
-        "advice_hi": "पुरानी पत्तियों से शुरू हुआ एक-समान पीलापन — यह भूख है, बीमारी नहीं। फफूंदनाशक पर पैसा न लगाएँ।",
-        "treatment": [
-            "Top-dress urea @ 25 kg/acre if no rain is expected in 48 hours",
-            "Or foliar spray 2% urea solution for a faster response",
-            "Re-check leaf colour after 10 days",
-        ],
-        "treatment_hi": [
-            "48 घंटे बारिश न हो तो यूरिया @ 25 किलो/एकड़ टॉप-ड्रेस करें",
-            "जल्दी असर के लिए 2% यूरिया घोल का छिड़काव करें",
-            "10 दिन बाद पत्ती का रंग दोबारा देखें",
-        ],
-        "est_cost_inr_per_acre": 340,
-    },
+# Full 38-class PlantVillage KB lives in plant_village_treatments.py to keep
+# this file focused on inference logic.
+TREATMENT_KB: Dict[str, Dict[str, object]] = PLANT_VILLAGE_TREATMENT_KB
+
+# Used only if the model returns a class label with no matching KB entry
+# (e.g. a custom-trained model with extra classes). Deliberately gives no
+# chemical/dosage advice, since inventing one for an unknown class is unsafe.
+_UNKNOWN_CLASS_FALLBACK: Dict[str, object] = {
+    "display_en": "Unrecognized condition",
+    "display_hi": "अज्ञात स्थिति",
+    "severity": "unknown",
+    "advice_en": "This result doesn't match a known condition in our advice database. Please consult your local Krishi Vigyan Kendra or agricultural officer before treating.",
+    "advice_hi": "यह परिणाम हमारे सलाह डेटाबेस में किसी ज्ञात स्थिति से मेल नहीं खाता। इलाज से पहले कृपया अपने नज़दीकी कृषि विज्ञान केंद्र या कृषि अधिकारी से सलाह लें।",
+    "treatment": [],
+    "est_cost_inr_per_acre": 0,
 }
 
 
@@ -315,7 +229,13 @@ class LeafDiseaseClassifier:
         proba = self.pipeline.predict_proba(vec.reshape(1, -1))[0]
         idx = int(np.argmax(proba))
         label = self.classes[idx]
-        kb = TREATMENT_KB.get(label, TREATMENT_KB["healthy"])
+        # kb = TREATMENT_KB.get(label, TREATMENT_KB["healthy"])
+
+        # Fall back to a generic "unknown issue" entry (not a specific
+        # treatment) if the model somehow returns a class this KB doesn't
+        # recognise — never guess a chemical/dosage for an unlabelled class.
+        kb = TREATMENT_KB.get(label, _UNKNOWN_CLASS_FALLBACK)
+        
         hi = language == "hi"
 
         return Diagnosis(

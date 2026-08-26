@@ -52,7 +52,7 @@ router.post('/optimize', optionalAuth, async (req: Request, res: Response, next:
   try {
     const input = optimizeSchema.parse(req.body) as MandiEngineInput;
     const result = await runMandiEngine(input);
-    res.json({ success: true, ...result });
+    res.json({ ...result, success: true });
   } catch (err) {
     next(err);
   }
@@ -107,9 +107,9 @@ router.post('/discover', optionalAuth, async (req: Request, res: Response, next:
 
     const result = await runMandiEngine(engineInput);
     res.json({
+      ...result,
       success: true,
       note: 'Distances default to 0 km until you set each mandi distance. Adjust and re-run for exact net profit.',
-      ...result,
     });
   } catch (err) {
     next(err);
