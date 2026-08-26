@@ -71,8 +71,8 @@ pip-log.txt
 htmlcov/
 
 # ── Trained model artifacts (regenerate with: make train) ──
-ml-microservice/app/models/artifacts/
-*.joblib
+ml-microservice/app/models/artifacts/*
+!ml-microservice/app/models/artifacts/leaf_svm.joblib
 *.pkl
 *.h5
 
