@@ -3,7 +3,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios';
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080/api/v1';
 
 export interface AgentAction {
-  widget: 'weather_card' | 'npk_calculator' | 'leaf_diagnostic' | 'mandi_profit' | 'pmfby_report' | 'scheme_results';
+  widget: 'weather_card' | 'npk_calculator' | 'leaf_diagnostic' | 'mandi_profit' | 'pmfby_report' | 'scheme_results' | 'farm_risk';
   reason: string;
   params: Record<string, unknown>;
 }
@@ -22,7 +22,7 @@ export interface WeatherSnapshot {
   longitude: number;
   current: { temperatureC: number; humidityPct: number; windSpeedKmh: number; precipitationMm: number; weatherCode: number };
   daily: Array<{ date: string; tMaxC: number; tMinC: number; rainMm: number; rainProbPct: number; windMaxKmh: number }>;
-  advisories: string[];
+  advisories: Localised[];
   source: string;
 }
 
@@ -34,8 +34,19 @@ export interface SoilSnapshot {
   sandPct: number;
   siltPct: number;
   cecCmolKg: number;
-  texture: string;
+  textureCode: string;
 }
+
+export interface NdviObservation {
+  from: string;
+  to: string;
+  mean: number;
+  min: number;
+  max: number;
+  stDev: number;
+  validPixelPct: number;
+}
+
 
 export interface MandiRow {
   rank: number;
@@ -55,7 +66,7 @@ export interface MandiRow {
   netPerQuintal: number;
   roundTripHours: number;
   viable: boolean;
-  verdict: string;
+  verdictCode: string;
 }
 
 export interface MandiResponse {
@@ -65,6 +76,47 @@ export interface MandiResponse {
   spreadVsWorst: number;
   localBaseline: { pricePerQuintal: number; netProfit: number; upliftIfTravel: number; travelRecommended: boolean } | null;
   assumptions: Record<string, number>;
+}
+
+export interface Localised {
+  code: string;
+  params?: Record<string, string | number>;
+}
+
+export interface RiskFactor {
+  key: string;
+  score: number;
+  band: 'low' | 'moderate' | 'high' | 'severe';
+  weight: number;
+  detail: Localised;
+  evidence?: string;
+}
+
+export interface RiskAssessment {
+  overall: number;
+  overallBand: 'low' | 'moderate' | 'high' | 'severe';
+  factors: RiskFactor[];
+  actions: Localised[];
+  ndvi: {
+    available: boolean;
+    reason?: string;
+    current: NdviObservation | null;
+    baselineMean: number | null;
+    anomaly: number | null;
+    anomalyZ: number | null;
+    trendPerInterval: number | null;
+    dropFromPeakPct: number | null;
+    seasonPeak: NdviObservation | null;
+    sparkline: Array<{ date: string; mean: number; validPixelPct: number }>;
+  };
+  context: {
+    rain7Mm: number;
+    maxTempC: number;
+    maxWindKmh: number;
+    humidityPct: number;
+    textureCode: string;
+    priceSpreadPct: number;
+  };
 }
 
 export interface Diagnosis {
@@ -157,6 +209,27 @@ export const api = {
     const { data } = await client.post<{ diagnosis: Diagnosis; low_confidence: boolean; note?: string }>(
       '/data/diagnose', form, { headers: { 'Content-Type': 'multipart/form-data' } },
     );
+    return data;
+  },
+
+  async risk(payload: {
+    lat: number; lon: number; crop?: string; state?: string;
+    boundary?: Array<{ lat: number; lon: number }>;
+  }) {
+    const { data } = await client.post<{ success: boolean } & RiskAssessment>('/risk/assess', payload);
+    return data as RiskAssessment;
+  },
+
+  async ndviEvent(payload: {
+    lat: number; lon: number; eventDate: string;
+    boundary?: Array<{ lat: number; lon: number }>;
+  }) {
+    const { data } = await client.post<{
+      success: boolean;
+      pre: NdviObservation | null;
+      post: NdviObservation | null;
+      lossPct: number | null;
+    }>('/data/ndvi/event', payload);
     return data;
   },
 

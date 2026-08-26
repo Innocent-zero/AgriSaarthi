@@ -244,7 +244,7 @@ class LeafDiseaseClassifier:
             confidence=round(float(proba[idx]), 4),
             severity=str(kb["severity"]),
             advice=str(kb["advice_hi"] if hi else kb["advice_en"]),
-            treatment=list(kb["treatment"]),  # type: ignore[arg-type]
+            treatment=list(kb["treatment_hi"] if hi else kb["treatment"]),  # type: ignore[arg-type]
             est_cost_inr_per_acre=int(kb["est_cost_inr_per_acre"]),  # type: ignore[arg-type]
             probabilities={c: round(float(p), 4) for c, p in zip(self.classes, proba)},
             lesion_coverage_pct=round(coverage, 2),
