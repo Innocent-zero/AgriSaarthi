@@ -209,6 +209,27 @@ export interface ClaimCheck {
   localised_peril: boolean;
 }
 
+export interface SchemeRecommendation {
+  schemeId: string;
+  titleCode: string;
+  benefitCode: string;
+  urgency: 'act_now' | 'this_season' | 'anytime';
+  score: number;
+  reasonCodes: Localised[];
+  actionCode: string;
+  portalUrl: string;
+  estValueCode?: string;
+  estValueParams?: Record<string, string | number>;
+}
+
+export interface RagAnswer {
+  query: string;
+  answer: string;
+  citations: RagCitation[];
+  grounded: boolean;
+  confidence: number;
+}
+
 export interface DiscoveredMandi {
   id: string;
   name: string;
@@ -302,7 +323,26 @@ export const api = {
     return data;
   },
 
-    async claimCheck(payload: {
+  async schemeRecommend(payload: {
+    lat: number; lon: number; crop?: string; areaHa?: number; state?: string;
+    language: 'hi' | 'en';
+    hasKcc?: boolean; hasInsurance?: boolean; hasSoilCard?: boolean;
+    irrigationSource?: string;
+  }) {
+    const { data } = await client.post<{
+      success: boolean;
+      recommendations: SchemeRecommendation[];
+      context: Record<string, unknown>;
+    }>('/schemes/recommend', payload);
+    return data;
+  },
+
+  async schemeDetail(payload: { schemeId: string; question?: string; language: 'hi' | 'en' }) {
+    const { data } = await client.post<{ success: boolean } & RagAnswer>('/schemes/detail', payload);
+    return data as RagAnswer;
+  },
+
+  async claimCheck(payload: {
     cause: string; eventDate: string; estimatedLossPct: number; language: 'hi' | 'en';
   }) {
     const { data } = await client.post<{ success: boolean } & ClaimCheck>(

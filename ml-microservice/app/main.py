@@ -135,7 +135,12 @@ async def rag_query(payload: RagQuery) -> Dict[str, Any]:
     """Direct knowledge-base lookup, bypassing the live-search fallback."""
     if not rag_service.ready:
         raise HTTPException(503, "Knowledge base is not built. Run: python -m app.scripts.ingest")
-    ans = rag_service.answer(payload.query, language=payload.language, k=payload.k)
+    ans = rag_service.answer(
+        payload.query,
+        language=payload.language,
+        k=payload.k,
+        scheme_id=payload.scheme_id,
+    )
     return {"success": True, **ans.to_dict()}
 
 

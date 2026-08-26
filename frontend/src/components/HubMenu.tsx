@@ -2,12 +2,12 @@
 
 import {
   CloudSun, Sprout, TrendingUp, Camera, FileText, ShieldAlert, MessageCircle,
-  Settings2, Languages, Wifi, WifiOff, Leaf,
+  Settings2, Languages, Wifi, WifiOff, Leaf, Landmark
 } from 'lucide-react';
 import { makeT, Locale } from '@/lib/i18n';
 
 export type ViewKey =
-  | 'weather' | 'npk' | 'mandi' | 'disease' | 'pmfby' | 'risk' | 'chat';
+  | 'weather' | 'npk' | 'mandi' | 'disease' | 'pmfby' | 'risk' | 'schemes' | 'chat';
 
 interface Props {
   name: string;
@@ -27,7 +27,8 @@ const TILES: Array<{ key: ViewKey; icon: typeof CloudSun; tone: string }> = [
   { key: 'disease', icon: Camera,        tone: 'bg-soil-900' },
   { key: 'pmfby',   icon: FileText,      tone: 'bg-soil-700' },
   { key: 'risk',    icon: ShieldAlert,   tone: 'bg-alert-600' },
-  { key: 'chat',    icon: MessageCircle, tone: 'bg-leaf-700' },
+  { key: 'schemes', icon: Landmark,      tone: 'bg-leaf-700' },
+  { key: 'chat',    icon: MessageCircle, tone: 'bg-soil-700' },
 ];
 
 export default function HubMenu({

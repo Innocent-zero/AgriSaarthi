@@ -113,8 +113,9 @@ class SchemeRagService:
         return self.store.stats()
 
     # ─────────────── answering ───────────────
-    def answer(self, query: str, language: str = "en", k: int = 4) -> RagAnswer:
-        hits = self.store.search(query, k=k)
+    def answer(self, query: str, language: str = "en", k: int = 4,
+               scheme_id: Optional[str] = None) -> RagAnswer:
+        hits = self.store.search(query, k=k, scheme_id=scheme_id)
 
         if not hits:
             return RagAnswer(

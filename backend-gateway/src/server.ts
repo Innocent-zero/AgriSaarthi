@@ -21,6 +21,7 @@ import mandiRoutes from './routes/mandi.routes';
 import alertRoutes from './routes/alerts.routes';
 import dataRoutes from './routes/data.routes';
 import riskRoutes from './routes/risk.routes';
+import schemeRoutes from './routes/schemes.routes';
 
 const app = express();
 const PORT = Number(process.env.GATEWAY_PORT || process.env.PORT || 8080);
@@ -33,6 +34,7 @@ app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use('/api/v1/schemes', schemeRoutes);
 // ── CORS ──
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
   .split(',')

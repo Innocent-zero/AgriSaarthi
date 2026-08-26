@@ -12,6 +12,7 @@ import MandiProfitWidget from '@/components/MandiProfitWidget';
 import PmfbyReportDownload from '@/components/PmfbyReportDownload';
 import FarmRiskWidget from '@/components/FarmRiskWidget';
 import WeatherPanel from '@/components/WeatherPanel';
+import SchemeAdvisorWidget from '@/components/SchemeAdvisorWidget';
 import { loadProfile, saveProfile, FarmProfile } from '@/lib/idb';
 import { api, getToken } from '@/lib/api';
 import { makeT, Locale } from '@/lib/i18n';
@@ -133,6 +134,9 @@ export default function Home() {
         return <FarmRiskWidget lat={farm.lat} lon={farm.lon} crop={farm.crop}
                                state={farm.state} boundary={farm.boundary} language={language} />;
       case 'chat':    return <HybridCopilotChat farm={farm} pendingMessage={pending} onReply={setLastReply} />;
+      case 'schemes':
+        return <SchemeAdvisorWidget lat={farm.lat} lon={farm.lon} crop={farm.crop}
+                                    areaHa={farm.areaHa} state={farm.state} language={language} />;
       default:        return null;
     }
   };
