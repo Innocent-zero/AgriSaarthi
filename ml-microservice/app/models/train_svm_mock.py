@@ -20,11 +20,12 @@ import argparse
 import glob
 import os
 import time
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import cv2
 import joblib
 import numpy as np
+from joblib import Parallel, delayed
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
@@ -32,6 +33,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from app.services.disease_classifier import CLASS_LABELS, extract_features
+from app.models.plant_village_labels import normalize_folder_name
 
 RNG = np.random.default_rng(20260824)
 CANVAS = (256, 256)
@@ -138,6 +140,24 @@ def synth_nitrogen_deficiency() -> np.ndarray:
     return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
 
 
+def synth_generic_lesion() -> np.ndarray:
+    """Fallback synthesizer for classes with no hand-tuned lesion model
+    (viral mottling, trunk rots, mite stippling, etc). Renders irregular
+    blotchy discoloration — not a claim about what that disease actually
+    looks like, just enough signal so the *synthetic-only* startup fallback
+    trains without crashing. Never used once a real dataset is trained."""
+    img, mask = _blank_leaf(int(RNG.integers(40, 60)), int(RNG.integers(120, 175)), int(RNG.integers(110, 170)))
+    overlay = img.copy()
+    for _ in range(int(RNG.integers(8, 20))):
+        x, y = _random_point(mask)
+        axes = (int(RNG.integers(6, 26)), int(RNG.integers(6, 22)))
+        shade = (int(RNG.integers(20, 70)), int(RNG.integers(60, 120)), int(RNG.integers(70, 150)))
+        cv2.ellipse(overlay, (x, y), axes, float(RNG.integers(0, 180)), 0, 360, shade, -1)
+    overlay = cv2.GaussianBlur(overlay, (7, 7), 0)
+    return cv2.addWeighted(overlay, 0.5, img, 0.5, 0)
+
+
+# Hand-tuned synthesizers for the original 6 generic categories.
 SYNTHESISERS = {
     "healthy": synth_healthy,
     "leaf_rust": synth_leaf_rust,
@@ -146,6 +166,27 @@ SYNTHESISERS = {
     "bacterial_spot": synth_bacterial_spot,
     "nitrogen_deficiency": synth_nitrogen_deficiency,
 }
+
+
+def _synthesizer_for(label: str) -> "Callable[[], np.ndarray]":
+    """Dispatches any of the 38 PlantVillage class keys to the closest
+    hand-tuned synthesizer by keyword, falling back to the generic one.
+    This only matters for the zero-config startup fallback in
+    disease_classifier.LeafDiseaseClassifier._load() — real accuracy always
+    comes from training on an actual dataset via --data-dir."""
+    if label in SYNTHESISERS:
+        return SYNTHESISERS[label]
+    if label.endswith("_healthy"):
+        return synth_healthy
+    if "rust" in label:
+        return synth_leaf_rust
+    if "blight" in label or "spot" in label and "bacterial" not in label:
+        return synth_early_blight
+    if "mildew" in label:
+        return synth_powdery_mildew
+    if "bacterial" in label:
+        return synth_bacterial_spot
+    return synth_generic_lesion
 
 
 def _augment(img: np.ndarray) -> np.ndarray:
@@ -165,7 +206,7 @@ def build_synthetic_dataset(n_per_class: int) -> Tuple[np.ndarray, np.ndarray]:
     X: List[np.ndarray] = []
     y: List[str] = []
     for label in CLASS_LABELS:
-        maker = SYNTHESISERS[label]
+        maker = _synthesizer_for(label)
         for _ in range(n_per_class):
             feats, _ = extract_features(_augment(maker()))
             X.append(feats)
@@ -173,23 +214,68 @@ def build_synthetic_dataset(n_per_class: int) -> Tuple[np.ndarray, np.ndarray]:
     return np.vstack(X), np.array(y)
 
 
-def build_real_dataset(data_dir: str, cap_per_class: int) -> Tuple[np.ndarray, np.ndarray]:
+def _extract_one(path: str) -> np.ndarray | None:
+    """Runs in a worker process — must be a top-level function so joblib can
+    pickle it. Returns None (rather than raising) for unreadable files so one
+    corrupt image doesn't kill the whole run."""
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    if img is None:
+        return None
+    feats, _ = extract_features(img)
+    return feats
+
+
+def build_real_dataset(data_dir: str, cap_per_class: int, n_jobs: int = -1) -> Tuple[np.ndarray, np.ndarray]:
+    """Reads images and extracts features in parallel across CPU cores
+    (n_jobs=-1 uses all of them). Feature extraction — resize, denoise,
+    HSV histogram, Hu moments, GLCM texture — is pure CPU work with no
+    shared state between images, so this parallelizes cleanly and gives a
+    roughly linear speedup with core count."""
     X: List[np.ndarray] = []
     y: List[str] = []
-    for label in sorted(os.listdir(data_dir)):
-        folder = os.path.join(data_dir, label)
+    skipped_folders: List[str] = []
+
+    class_folders: List[Tuple[str, str]] = []  # (normalized_label, folder_path)
+    for raw_folder_name in sorted(os.listdir(data_dir)):
+        folder = os.path.join(data_dir, raw_folder_name)
         if not os.path.isdir(folder):
             continue
+        label = normalize_folder_name(raw_folder_name) or (
+            raw_folder_name if raw_folder_name in CLASS_LABELS else None
+        )
+        if label is None:
+            skipped_folders.append(raw_folder_name)
+            continue
+        class_folders.append((label, folder))
+
+    if skipped_folders:
+        print(f"⚠ Skipped {len(skipped_folders)} unrecognized folder(s) (no matching class): {skipped_folders}")
+
+    total_classes = len(class_folders)
+    for i, (label, folder) in enumerate(class_folders, start=1):
         files: List[str] = []
         for ext in ("*.jpg", "*.jpeg", "*.png", "*.JPG"):
             files.extend(glob.glob(os.path.join(folder, ext)))
-        for path in files[:cap_per_class]:
-            img = cv2.imread(path, cv2.IMREAD_COLOR)
-            if img is None:
+        files = files[:cap_per_class]
+
+        print(f"[{i}/{total_classes}] {label}: processing {len(files)} images...", flush=True)
+        started = time.time()
+
+        results = Parallel(n_jobs=n_jobs, backend="loky")(
+            delayed(_extract_one)(path) for path in files
+        )
+
+        n_ok = 0
+        for feats in results:
+            if feats is None:
                 continue
-            feats, _ = extract_features(img)
             X.append(feats)
             y.append(label)
+            n_ok += 1
+
+        elapsed = time.time() - started
+        print(f"    ✓ {n_ok}/{len(files)} images usable  ({elapsed:.1f}s)", flush=True)
+
     if not X:
         raise SystemExit(f"No readable images found under {data_dir}")
     return np.vstack(X), np.array(y)
@@ -201,10 +287,11 @@ def train_and_export(
     n_per_class: int = 40,
     data_dir: str | None = None,
     quiet: bool = False,
+    n_jobs: int = -1,
 ) -> Dict[str, object]:
     started = time.time()
     if data_dir:
-        X, y = build_real_dataset(data_dir, cap_per_class=n_per_class * 6)
+        X, y = build_real_dataset(data_dir, cap_per_class=n_per_class * 6, n_jobs=n_jobs)
     else:
         X, y = build_synthetic_dataset(n_per_class)
 
@@ -251,10 +338,15 @@ def main() -> None:
     ap.add_argument("--data-dir", type=str, default=None, help="PlantVillage-style directory")
     ap.add_argument("--out", type=str, default=os.getenv("SVM_MODEL_PATH", "app/models/artifacts/leaf_svm.joblib"))
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--jobs", type=int, default=-1,
+                    help="CPU cores to use for real-dataset feature extraction (-1 = all cores, default)")
     args = ap.parse_args()
     train_and_export(output_path=args.out, n_per_class=args.samples,
-                     data_dir=args.data_dir, quiet=args.quiet)
+                     data_dir=args.data_dir, quiet=args.quiet, n_jobs=args.jobs)
 
 
 if __name__ == "__main__":
+    # Required on Windows: joblib's "loky" backend spawns worker processes
+    # that re-import this module, so all top-level code must sit behind this
+    # guard or you'll get infinite process spawning / a multiprocessing crash.
     main()

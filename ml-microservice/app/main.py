@@ -5,6 +5,8 @@ import os
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+load_dotenv()   # must run before importing app.services.* singletons
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -13,8 +15,6 @@ from pydantic import BaseModel, Field, field_validator
 from app.services.disease_classifier import get_classifier
 from app.services.pmfby_pdf_generator import generate_pmfby_report
 from app.services.tavily_search import tavily_service
-
-load_dotenv()
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(),
                     format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 logger = logging.getLogger("agrisaarthi.ml")
