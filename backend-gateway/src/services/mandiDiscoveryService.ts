@@ -145,20 +145,31 @@ class MandiDiscoveryService {
       discovered.push(...cached);
     } else {
       for (const t of ordered) {
-        const geo = await geocoding.forwardMarket(t.market, t.district || district, state);
-        if (geo.precision === 'none') { skipped += 1; continue; }
+        let lat = t.lat;
+        let lon = t.lon;
+        let precision: GeocodePrecision = 'market';
 
-        const distanceKm = haversineKm(origin, geo) * ROAD_FACTOR;
+        // Seed data ships with coordinates; only live AGMARKNET rows need a
+        // geocoding round-trip, and each one costs a second of rate limit.
+        if (lat === undefined || lon === undefined) {
+          const geo = await geocoding.forwardMarket(t.market, t.district || district, state);
+          if (geo.precision === 'none') { skipped += 1; continue; }
+          lat = geo.lat;
+          lon = geo.lon;
+          precision = geo.precision;
+        }
+
+        const distanceKm = haversineKm(origin, { lat, lon }) * ROAD_FACTOR;
         if (distanceKm > radiusKm) { skipped += 1; continue; }
 
         discovered.push({
           id: `apmc_${discovered.length + 1}`,
           name: t.market,
           district: t.district,
-          lat: geo.lat,
-          lon: geo.lon,
+          lat,
+          lon,
           distanceKm: Number(distanceKm.toFixed(1)),
-          precision: geo.precision,
+          precision,
           pricePerQuintal: t.modalPrice,
           minPrice: t.minPrice,
           maxPrice: t.maxPrice,

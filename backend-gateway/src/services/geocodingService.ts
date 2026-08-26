@@ -130,8 +130,6 @@ class GeocodingService {
 
     const attempts: Array<{ q: string; precision: GeocodePrecision }> = [
       { q: [market, district, state, 'India'].filter(Boolean).join(', '), precision: 'market' },
-      { q: [`${cleaned} mandi`, district, state, 'India'].filter(Boolean).join(', '), precision: 'market' },
-      { q: [cleaned, district, state, 'India'].filter(Boolean).join(', '), precision: 'market' },
     ];
     if (district) {
       attempts.push({ q: [district, state, 'India'].filter(Boolean).join(', '), precision: 'district' });

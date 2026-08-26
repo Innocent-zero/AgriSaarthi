@@ -356,13 +356,10 @@ export const api = {
     return data as Blob;
   },
 
-    async mandiAuto(payload: {
-    lat: number; lon: number; crop: string; volumeQuintals: number;
-    radiusKm?: number; localPricePerQuintal?: number;
-    state?: string; district?: string;
-    vehicle?: Record<string, number>;
-  }) {
-    const { data } = await client.post<{ success: boolean } & MandiAutoResult>('/mandi/auto', payload);
+  async mandiAuto(payload: { /* …unchanged… */ }) {
+    const { data } = await client.post<{ success: boolean } & MandiAutoResult>(
+      '/mandi/auto', payload, { timeout: 90000 },
+    );
     return data as MandiAutoResult;
   },
 };

@@ -456,4 +456,19 @@ class DataExecutionService {
   }
 }
 
+export interface MandiTicker {
+  market: string;
+  district: string;
+  state: string;
+  commodity: string;
+  variety: string;
+  minPrice: number;
+  maxPrice: number;
+  modalPrice: number;
+  arrivalDate: string;
+  lat?: number;
+  lon?: number;
+  source?: 'agmarknet' | 'demo-seed';
+}
+
 export const swytchcode = new DataExecutionService();
