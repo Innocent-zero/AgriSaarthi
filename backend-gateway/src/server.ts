@@ -34,12 +34,6 @@ app.use(compression());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use('/api/v1/agent', agentRoutes);
-app.use('/api/v1/mandi', mandiRoutes);
-app.use('/api/v1/alerts', alertRoutes);
-app.use('/api/v1/data', dataRoutes);
-app.use('/api/v1/risk', riskRoutes);
-app.use('/api/v1/schemes', schemeRoutes);
 // ── CORS ──
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000')
   .split(',')
@@ -103,7 +97,7 @@ app.use('/api/v1/mandi', mandiRoutes);
 app.use('/api/v1/alerts', alertRoutes);
 app.use('/api/v1/data', dataRoutes);
 app.use('/api/v1/risk', riskRoutes);
-
+app.use('/api/v1/schemes', schemeRoutes);
 
 // ── 404 ──
 app.use((req: Request, res: Response) => {
