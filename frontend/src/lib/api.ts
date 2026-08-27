@@ -158,18 +158,80 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-export function friendlyError(err: unknown): string {
+export interface FriendlyError {
+  message: string;      // farmer-facing, plain language
+  technical?: string;   // hidden behind "Technical details"
+  offline: boolean;
+  retryable: boolean;
+}
+
+/**
+ * Maps every failure onto farmer-facing language. Developer instructions from
+ * the gateway ("Start it with: make ml") must never reach the farmer, so
+ * backend messages are matched by their error CODE and replaced, with the raw
+ * text preserved under technical detail.
+ */
+export function describeError(err: unknown): FriendlyError {
+  const online = typeof navigator === 'undefined' ? true : navigator.onLine;
+
   if (axios.isAxiosError(err)) {
-    const ax = err as AxiosError<{ error?: string; detail?: string }>;
-    if (ax.code === 'ECONNABORTED') return 'The network is slow right now. Please try again.';
-    if (!ax.response) {
-      return navigator.onLine
-        ? 'Could not reach the server. Check that the gateway is running on port 8080.'
-        : 'You are offline — showing your last saved data.';
+    const ax = err as AxiosError<{ error?: string; detail?: string; code?: string }>;
+    const raw = ax.response?.data?.error || ax.response?.data?.detail || ax.message;
+    const code = ax.response?.data?.code;
+
+    if (ax.code === 'ECONNABORTED') {
+      return {
+        message: 'This is taking longer than usual. Your connection may be slow.',
+        technical: raw, offline: false, retryable: true,
+      };
     }
-    return ax.response.data?.error || ax.response.data?.detail || `Request failed (${ax.response.status}).`;
+
+    if (!ax.response) {
+      return {
+        message: online
+          ? 'We could not reach AgriSaarthi just now. Please try again in a moment.'
+          : 'You are offline. We are showing your saved farm information.',
+        technical: raw, offline: !online, retryable: true,
+      };
+    }
+
+    // Service-down codes carry operator instructions. Replace them entirely.
+    if (code === 'ML_SERVICE_DOWN' || code === 'ENGINE_MISSING' || code === 'ENGINE_TIMEOUT') {
+      return {
+        message: 'This service is temporarily unavailable. Please try again shortly.',
+        technical: raw, offline: false, retryable: true,
+      };
+    }
+
+    if (ax.response.status === 429) {
+      return {
+        message: 'Too many requests just now. Please wait a moment and try again.',
+        technical: raw, offline: false, retryable: true,
+      };
+    }
+
+    if (ax.response.status >= 500) {
+      return {
+        message: 'Something went wrong on our side. Please try again.',
+        technical: raw, offline: false, retryable: true,
+      };
+    }
+
+    // 4xx is usually a validation problem the farmer can act on.
+    return { message: raw || 'That request could not be completed.', technical: raw, offline: false, retryable: false };
   }
-  return err instanceof Error ? err.message : 'Something went wrong.';
+
+  return {
+    message: 'Something went wrong. Please try again.',
+    technical: err instanceof Error ? err.message : String(err),
+    offline: false,
+    retryable: true,
+  };
+}
+
+/** Back-compat for components not yet migrated to describeError. */
+export function friendlyError(err: unknown): string {
+  return describeError(err).message;
 }
 
 export interface RagCitation {

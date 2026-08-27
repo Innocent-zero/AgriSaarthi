@@ -10,6 +10,7 @@ interface Props {
   onSubmit: (text: string) => void;
   busy?: boolean;
   lastReply?: string;
+  compact?: boolean;
 }
 
 // Web Speech API is not in the standard TS DOM lib.
@@ -28,7 +29,7 @@ type SpeechRecognitionLike = {
 
 const PROMPT_KEYS = ['prompt.spray', 'prompt.rate', 'prompt.yellow', 'prompt.pmkisan'];
 
-export default function VoiceSearchBar({ language, onLanguageChange, onSubmit, busy, lastReply }: Props) {
+export default function VoiceSearchBar({ language, onLanguageChange, onSubmit, busy, lastReply ,compact, }: Props) {
   const t = makeT(language);
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
@@ -145,14 +146,16 @@ export default function VoiceSearchBar({ language, onLanguageChange, onSubmit, b
       {error && <p className="mt-2 text-center text-sm text-alert-600">{error}</p>}
       {!supported && <p className="mt-2 text-center text-xs text-soil-700">{t('voice.unsupported')}</p>}
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {PROMPT_KEYS.map((k) => (
-          <button key={k} type="button" onClick={() => onSubmit(t(k))} disabled={busy}
-                  className="rounded-full border border-leaf-100 bg-white px-3 py-1.5 text-xs text-leaf-700 transition hover:bg-leaf-50 disabled:opacity-40">
-            {t(k)}
-          </button>
-        ))}
-      </div>
+      {!compact && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {PROMPT_KEYS.map((k) => (
+            <button key={k} type="button" onClick={() => onSubmit(t(k))} disabled={busy}
+                    className="rounded-full border border-leaf-100 bg-white px-3 py-1.5 text-xs text-leaf-700 transition hover:bg-leaf-50 disabled:opacity-40">
+              {t(k)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -185,7 +185,7 @@ export default function HybridCopilotChat({ farm, pendingMessage, onReply }: Pro
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col">
       {turns.length > 0 && (
         <div className="mb-2 flex justify-end">
           <button
@@ -197,7 +197,7 @@ export default function HybridCopilotChat({ farm, pendingMessage, onReply }: Pro
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto pb-2">
+      <div ref={scrollRef} className="space-y-4">
         {turns.length === 0 && (
           <div className="rounded-2xl border border-dashed border-leaf-100 p-6 text-center">
             <Bot size={28} className="mx-auto text-leaf-500" />
