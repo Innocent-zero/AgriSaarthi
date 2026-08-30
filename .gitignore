@@ -28,18 +28,16 @@ package-lock.json.bak
 backend-gateway/dist/
 *.tsbuildinfo
 
-# ── Next.js ──
-frontend/.next/
-frontend/out/
-frontend/build/
-frontend/next-env.d.ts
+# ── Frontend (Vite + React + PWA) ──
+frontend-new/dist/
+frontend-new/.vite/
 
-# next-pwa generates these at build time — never commit
-frontend/public/sw.js
-frontend/public/sw.js.map
-frontend/public/workbox-*.js
-frontend/public/workbox-*.js.map
-frontend/public/fallback-*.js
+# vite-plugin-pwa generated files
+frontend-new/public/sw.js
+frontend-new/public/sw.js.map
+frontend-new/public/workbox-*.js
+frontend-new/public/workbox-*.js.map
+frontend-new/public/registerSW.js
 
 # ── C++ engine ──
 mandi-engine/build/

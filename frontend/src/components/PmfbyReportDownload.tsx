@@ -1,4 +1,3 @@
-'use client';
 
 import { useState } from 'react';
 import { FileText, Download, Loader2, Satellite } from 'lucide-react';

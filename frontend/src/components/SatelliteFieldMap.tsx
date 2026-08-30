@@ -1,15 +1,8 @@
-'use client';
-
-import dynamic from 'next/dynamic';
 import { MapPin, Layers, Crosshair } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Polygon, Popup, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-
-const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((m) => m.Marker), { ssr: false });
-const Polygon = dynamic(() => import('react-leaflet').then((m) => m.Polygon), { ssr: false });
-const Popup = dynamic(() => import('react-leaflet').then((m) => m.Popup), { ssr: false });
 
 interface Props {
   lat: number;
@@ -21,19 +14,13 @@ interface Props {
 }
 
 /**
- * Click handler must live inside the MapContainer tree, so it is defined here
- * and loaded client-side only (react-leaflet hooks require a map context).
+ * Click handler must live inside the MapContainer tree — react-leaflet hooks
+ * require a map context, so this stays a child component rendered in JSX.
  */
-const ClickCapture = dynamic(
-  async () => {
-    const { useMapEvents } = await import('react-leaflet');
-    return function Capture({ onClick }: { onClick: (lat: number, lon: number) => void }) {
-      useMapEvents({ click: (e) => onClick(e.latlng.lat, e.latlng.lng) });
-      return null;
-    };
-  },
-  { ssr: false },
-);
+function ClickCapture({ onClick }: { onClick: (lat: number, lon: number) => void }) {
+  useMapEvents({ click: (e) => onClick(e.latlng.lat, e.latlng.lng) });
+  return null;
+}
 
 export default function SatelliteFieldMap({ lat, lon, language, boundary = [], onSelect, onBoundaryChange }: Props) {
   const hi = language === 'hi';
@@ -41,8 +28,8 @@ export default function SatelliteFieldMap({ lat, lon, language, boundary = [], o
   const [showNdvi, setShowNdvi] = useState(false);
   const [locating, setLocating] = useState(false);
 
-  const tileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const ndviUrl = process.env.NEXT_PUBLIC_NDVI_TILE_URL;
+  const tileUrl = import.meta.env.VITE_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const ndviUrl = import.meta.env.VITE_NDVI_TILE_URL;
 
   const polygon = useMemo(
     () => boundary.map((p) => [p.lat, p.lon] as [number, number]),
@@ -70,29 +57,19 @@ export default function SatelliteFieldMap({ lat, lon, language, boundary = [], o
     );
   };
 
-    // Inline SVG marker — avoids Leaflet's default icon 404s and needs no network.
-  const [fieldIcon, setFieldIcon] = useState<any>(null);
-  useEffect(() => {
-    let alive = true;
-    import('leaflet').then((L) => {
-      if (!alive) return;
-      setFieldIcon(
-        L.divIcon({
-          className: '',
-          iconSize: [30, 30],
-          iconAnchor: [15, 30],
-          popupAnchor: [0, -28],
-          html: `<svg width="30" height="30" viewBox="0 0 24 24" fill="none"
-                      xmlns="http://www.w3.org/2000/svg">
-                   <path d="M12 22s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"
-                         fill="#1B7A43" stroke="#fff" stroke-width="1.6"/>
-                   <circle cx="12" cy="11" r="2.6" fill="#fff"/>
-                 </svg>`,
-        }),
-      );
-    });
-    return () => { alive = false; };
-  }, []);
+  // Inline SVG marker — avoids Leaflet's default icon 404s and needs no network.
+  const fieldIcon = useMemo(() => L.divIcon({
+    className: '',
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+    popupAnchor: [0, -28],
+    html: `<svg width="30" height="30" viewBox="0 0 24 24" fill="none"
+                xmlns="http://www.w3.org/2000/svg">
+             <path d="M12 22s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"
+                   fill="#1B7A43" stroke="#fff" stroke-width="1.6"/>
+             <circle cx="12" cy="11" r="2.6" fill="#fff"/>
+           </svg>`,
+  }), []);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-leaf-100 bg-white shadow-card">

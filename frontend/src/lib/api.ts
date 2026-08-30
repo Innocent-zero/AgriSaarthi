@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080/api/v1';
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080/api/v1';
 
 export interface AgentAction {
   widget: 'weather_card' | 'npk_calculator' | 'leaf_diagnostic' | 'mandi_profit' | 'pmfby_report' | 'scheme_results' | 'farm_risk';

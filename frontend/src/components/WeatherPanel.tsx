@@ -1,4 +1,3 @@
-'use client';
 
 import { useEffect, useState } from 'react';
 import { CloudSun, Droplets, Wind, Loader2, WifiOff } from 'lucide-react';

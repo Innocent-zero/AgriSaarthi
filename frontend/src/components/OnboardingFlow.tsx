@@ -1,39 +1,20 @@
-'use client';
-
 import { useEffect, useMemo, useState } from 'react';
-import dynamic from 'next/dynamic';
 import { Leaf, ArrowRight, ArrowLeft, Crosshair, Check, Languages } from 'lucide-react';
+import { MapContainer, TileLayer, Polygon, CircleMarker, useMapEvents, useMap } from 'react-leaflet';
 import { makeT, Locale } from '@/lib/i18n';
 import { polygonAreaHectares, polygonCentroid, isPlausibleField, LatLon } from '@/lib/geo';
 import 'leaflet/dist/leaflet.css';
 
-const MapContainer = dynamic(() => import('react-leaflet').then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((m) => m.TileLayer), { ssr: false });
-const Polygon = dynamic(() => import('react-leaflet').then((m) => m.Polygon), { ssr: false });
-const CircleMarker = dynamic(() => import('react-leaflet').then((m) => m.CircleMarker), { ssr: false });
+function ClickCapture({ onClick }: { onClick: (lat: number, lon: number) => void }) {
+  useMapEvents({ click: (e) => onClick(e.latlng.lat, e.latlng.lng) });
+  return null;
+}
 
-const ClickCapture = dynamic(
-  async () => {
-    const { useMapEvents } = await import('react-leaflet');
-    return function Capture({ onClick }: { onClick: (lat: number, lon: number) => void }) {
-      useMapEvents({ click: (e) => onClick(e.latlng.lat, e.latlng.lng) });
-      return null;
-    };
-  },
-  { ssr: false },
-);
-
-const Recenter = dynamic(
-  async () => {
-    const { useMap } = await import('react-leaflet');
-    return function R({ lat, lon }: { lat: number; lon: number }) {
-      const map = useMap();
-      useEffect(() => { map.setView([lat, lon], 16); }, [lat, lon, map]);
-      return null;
-    };
-  },
-  { ssr: false },
-);
+function Recenter({ lat, lon }: { lat: number; lon: number }) {
+  const map = useMap();
+  useEffect(() => { map.setView([lat, lon], 16); }, [lat, lon, map]);
+  return null;
+}
 
 const CROPS = [
   { key: 'Wheat', hi: 'गेहूँ', emoji: '🌾' },
@@ -69,13 +50,13 @@ export default function OnboardingFlow({ initial, onComplete, onCancel }: Props)
   const [boundary, setBoundary] = useState<LatLon[]>(initial?.boundary ?? []);
   const [crop, setCrop] = useState(initial?.crop ?? '');
   const [centre, setCentre] = useState<LatLon>({
-    lat: initial?.lat ?? Number(process.env.NEXT_PUBLIC_DEFAULT_LAT ?? 26.8467),
-    lon: initial?.lon ?? Number(process.env.NEXT_PUBLIC_DEFAULT_LON ?? 80.9462),
+    lat: initial?.lat ?? Number(import.meta.env.VITE_DEFAULT_LAT ?? 26.8467),
+    lon: initial?.lon ?? Number(import.meta.env.VITE_DEFAULT_LON ?? 80.9462),
   });
   const [locating, setLocating] = useState(false);
 
   const t = makeT(language);
-  const tileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const tileUrl = import.meta.env.VITE_MAP_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   const areaHa = useMemo(() => polygonAreaHectares(boundary), [boundary]);
   const valid = isPlausibleField(boundary);
