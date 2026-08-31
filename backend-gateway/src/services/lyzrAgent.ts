@@ -15,6 +15,7 @@
  */
 import axios, { AxiosInstance } from 'axios';
 import { swytchcode } from './swytchcodeService';
+import { ML_SERVICE_URL } from '../config/services';
 
 export type WidgetName =
   | 'weather_card'
@@ -182,7 +183,12 @@ Never state a raw metric alone; attach it to an action and its financial consequ
 You do NOT compute fertiliser doses, mandi prices, disease diagnoses or risk scores.
 Dedicated engines do that. Open the right widget instead of inventing numbers.
 
-Never invent a chemical dose, a scheme amount, or an eligibility rule.
+Never invent a chemical dose, a scheme amount, or an eligibility rule. If a
+LIVE KNOWLEDGE section is present below, it was just fetched from verified
+sources for this exact question — base your answer on it and do not
+contradict it. If it is absent, answer from general agricultural knowledge
+and say so is unnecessary; just avoid stating specific dates, amounts or
+rules you are not certain of.
 
 Respond ONLY with a JSON object of this exact shape and nothing else:
 {"reply":"<your answer>","actions":[{"widget":"<name>","reason":"<why>","params":{}}],"confidence":<0-1>}
@@ -246,12 +252,62 @@ class LyzrAgentService {
   }
 
   // ───────────────── Remote inference ─────────────────
+  // Messages worth paying the extra ~1-2s round trip to ground before
+  // asking Lyzr. Kept deliberately broad (schemes, prices, timing, "latest")
+  // rather than scheme-only, since these are exactly the categories a static
+  // system prompt cannot answer correctly on its own.
+  private static readonly GROUNDING_MARKERS = [
+    'yojana', 'योजना', 'scheme', 'pmfby', 'pm-kisan', 'pm kisan', 'kisan credit',
+    'kcc', 'subsidy', 'सब्सिडी', 'insurance', 'बीमा', 'loan', 'लोन', 'ऋण',
+    'latest', 'new', 'नया', 'नई', 'ताज़ा', 'ताजा', 'update', 'बदल',
+    'deadline', 'last date', 'अंतिम तिथि', 'when will', 'कब आएगी', 'कब मिलेगी',
+    'eligib', 'पात्र', 'apply', 'आवेदन', 'documents', 'दस्तावेज़',
+  ];
+
+  private needsGrounding(message: string): boolean {
+    const q = message.toLowerCase();
+    return LyzrAgentService.GROUNDING_MARKERS.some((m) => q.includes(m));
+  }
+
+  /**
+   * Actually wires Tavily/RAG into the chat. Previously this service and the
+   * ML microservice's Tavily-backed /api/v1/rag/query endpoint were entirely
+   * disconnected — Tavily only ever ran behind the standalone scheme_results
+   * widget, never as context for the conversational reply itself, which is
+   * why answers to scheme/timing/eligibility questions came out generic
+   * regardless of the search integration existing elsewhere in the app.
+   */
+  private async fetchGrounding(message: string, language: 'hi' | 'en'): Promise<string | null> {
+    try {
+      const { data } = await axios.post(
+        `${ML_SERVICE_URL}/api/v1/rag/query`,
+        { query: message, language, k: 3 },
+        { timeout: 6000 },
+      );
+      if (!data?.grounded || !data?.answer) return null;
+      const sources = Array.isArray(data.citations)
+        ? data.citations.slice(0, 2).map((c: { title?: string }) => c.title).filter(Boolean).join('; ')
+        : '';
+      return sources ? `${data.answer} (sources: ${sources})` : String(data.answer);
+    } catch (err) {
+      // Grounding is an enhancement, never a hard dependency — a slow or
+      // down ML service must not break the chat itself.
+      console.warn('[lyzr] grounding fetch failed, answering without it:',
+        axios.isAxiosError(err) ? err.message : err);
+      return null;
+    }
+  }
+
   private async callLyzr(
     message: string,
     ctx: AgentContext,
     sessionId: string,
   ): Promise<AgentTurn | null> {
     try {
+      const grounding = this.needsGrounding(message)
+        ? await this.fetchGrounding(message, ctx.language)
+        : null;
+
       const contextBlock = [
         'FARM CONTEXT:',
         `- coordinates: ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)}`,
@@ -261,6 +317,7 @@ class LyzrAgentService {
         ctx.state ? `- state: ${ctx.state}` : '',
         ctx.farmerName ? `- farmer name: ${ctx.farmerName}` : '',
         `- reply language: ${ctx.language === 'hi' ? 'Hindi (Devanagari)' : 'English'}`,
+        grounding ? `\nLIVE KNOWLEDGE (verified just now, prefer this over your own knowledge):\n${grounding}` : '',
       ].filter(Boolean).join('\n');
 
       const { data } = await this.client!.post('', {
@@ -278,7 +335,7 @@ class LyzrAgentService {
 
       return {
         reply: parsed.reply,
-        actions: this.enrich(parsed.actions, ctx),
+        actions: this.enrich(parsed.actions, ctx, message),
         language: ctx.language,
         sessionId,
         source: 'lyzr',
@@ -515,7 +572,7 @@ class LyzrAgentService {
 
     return {
       reply: lines.filter(Boolean).join(' '),
-      actions: this.enrich(actions, ctx),
+      actions: this.enrich(actions, ctx, message),
       language: ctx.language,
       sessionId,
       source: 'local-planner',
@@ -625,7 +682,7 @@ class LyzrAgentService {
    * coordinates from somewhere else entirely. Only a small whitelist of params
    * is genuinely the model's to set; the rest come from the verified profile.
    */
-  private enrich(actions: AgentAction[], ctx: AgentContext): AgentAction[] {
+  private enrich(actions: AgentAction[], ctx: AgentContext, message?: string): AgentAction[] {
     return actions.map((a) => {
       const modelParams: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(a.params ?? {})) {
@@ -633,6 +690,16 @@ class LyzrAgentService {
           modelParams[k] = v;
         }
       }
+
+      // The system prompt asks the model to always include "query" for
+      // scheme_results, but LLM JSON output isn't guaranteed to comply.
+      // Never let an empty query reach the /data/schemes proxy — fall back
+      // to the farmer's own message, which is always non-empty by the time
+      // it reaches here (the /agent/query route requires message.min(1)).
+      if (a.widget === 'scheme_results' && !(typeof modelParams.query === 'string' && modelParams.query.trim().length >= 2)) {
+        modelParams.query = (message ?? '').trim() || undefined;
+      }
+
       return {
         ...a,
         params: {

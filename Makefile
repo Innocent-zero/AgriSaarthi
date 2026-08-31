@@ -9,8 +9,17 @@ GATEWAY_DIR  := backend-gateway
 ML_DIR       := ml-microservice
 WEB_DIR      := frontend
 BUILD_TYPE   ?= Release
+PYTHON       ?= python3
 
-.PHONY: help install build engine gateway ml web train dev clean test verify-engine
+# Portable venv python path — Windows venvs use Scripts/, POSIX uses bin/.
+# Override with `make install PYTHON=python3.12` if you have multiple interpreters.
+ifeq ($(OS),Windows_NT)
+  VENV_PY := .venv/Scripts/python.exe
+else
+  VENV_PY := .venv/bin/python
+endif
+
+.PHONY: help install build engine gateway ml web train dev clean test verify-engine ingest ingest-pdf
 
 help:
 	@echo "AgriSaarthi V1 — targets"
@@ -24,9 +33,9 @@ help:
 
 install:
 	@echo "→ Node gateway deps"; cd $(GATEWAY_DIR) && npm install
-	@echo "→ Python ML deps"; cd $(ML_DIR) && "/c/Users/VANSH GARG/AppData/Local/Programs/Python/Python312/python.exe" -m venv .venv && \
-		.venv/Scripts/python.exe -m pip install --upgrade pip && \
-		.venv/Scripts/python.exe -m pip install -r requirements.txt
+	@echo "→ Python ML deps"; cd $(ML_DIR) && $(PYTHON) -m venv .venv && \
+		./$(VENV_PY) -m pip install --upgrade pip && \
+		./$(VENV_PY) -m pip install -r requirements.txt
 	@echo "→ Next.js deps";      cd $(WEB_DIR) && npm install
 
 engine:
@@ -42,11 +51,11 @@ web:
 	cd $(WEB_DIR) && npm run build
 
 train:
-	cd $(ML_DIR) && ../$(VENV_PY) -m app.models.train_svm_mock --samples 240
-	cd $(ML_DIR) && ../$(VENV_PY) -m app.scripts.ingest
+	cd $(ML_DIR) && ./$(VENV_PY) -m app.models.train_svm_mock --samples 240
+	cd $(ML_DIR) && ./$(VENV_PY) -m app.scripts.ingest
 
 ml:
-	cd $(ML_DIR) && .venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port $${ML_SERVICE_PORT:-8000} --reload
+	cd $(ML_DIR) && ./$(VENV_PY) -m uvicorn app.main:app --host 0.0.0.0 --port $${ML_SERVICE_PORT:-8000} --reload
 
 build: engine gateway web
 
@@ -59,7 +68,7 @@ verify-engine:
 dev:
 	@trap 'kill 0' EXIT; \
 	( cd $(GATEWAY_DIR) && npm run dev ) & \
-	( cd $(ML_DIR) && .venv/Scripts/python.exe -m uvicorn app.main:app --port 8000 --reload ) & \
+	( cd $(ML_DIR) && ./$(VENV_PY) -m uvicorn app.main:app --port $${ML_SERVICE_PORT:-8000} --reload ) & \
 	( cd $(WEB_DIR) && npm run dev ) & \
 	wait
 
@@ -71,7 +80,7 @@ clean:
 	@echo "✓ cleaned"
 
 ingest:
-	cd $(ML_DIR) && ../$(VENV_PY) -m app.scripts.ingest
+	cd $(ML_DIR) && ./$(VENV_PY) -m app.scripts.ingest
 
 ingest-pdf:
-	cd $(ML_DIR) && ../$(VENV_PY) -m app.scripts.ingest --pdf-dir data/scheme_pdfs
+	cd $(ML_DIR) && ./$(VENV_PY) -m app.scripts.ingest --pdf-dir data/scheme_pdfs

@@ -65,11 +65,11 @@ router.post('/auto', optionalAuth, async (req: Request, res: Response, next: Nex
 });
 
 /** POST /api/v1/mandi/optimize — manual candidate list → C++ engine. */
-router.post('/auto', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/optimize', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const body = autoSchema.parse(req.body);
-    const result = await mandiDiscovery.discover(body);
-    res.json({ success: true as const, ...result });
+    const body = optimizeSchema.parse(req.body) as MandiEngineInput;
+    const result = await runMandiEngine(body);
+    res.json({ ...result, success: true as const });
   } catch (err) {
     next(err);
   }

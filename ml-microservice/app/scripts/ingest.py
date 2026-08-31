@@ -21,6 +21,14 @@ because they carry the exact clause language.
 """
 from __future__ import annotations
 
+# Must run before importing app.services.* singletons — this script is
+# invoked standalone (via `python -m app.scripts.ingest`, e.g. from
+# `make train` / `make ingest`), so it never goes through app.main and would
+# otherwise silently ignore everything in .env (RAG_INDEX_PATH,
+# TAVILY_API_KEY, etc. would all fall back to their hardcoded defaults).
+from dotenv import load_dotenv
+load_dotenv()
+
 import argparse
 import glob
 import logging

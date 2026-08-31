@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
+from app.config import get_settings
 from app.knowledge.schemes_seed import SCHEMES
 from app.services.vector_store import Chunk, Hit, SchemeVectorStore, tokenize
 from app.services.tavily_ingest import tavily_ingest
@@ -146,13 +147,27 @@ class SchemeRagService:
             for h in hits
         ]
 
+        confidence = min(1.0, top.score * 1.4)
+        # RAG_MIN_CONFIDENCE was previously enforced only inside
+        # SchemeAnswerService (tavily_search.py), so any direct caller of
+        # this method — including /api/v1/rag/query, used by the
+        # scheme-detail feature — reported grounded=True for a weak,
+        # near-irrelevant top hit. Enforce it here once, for every caller.
+        is_grounded = confidence >= get_settings().rag_min_confidence
+
         return RagAnswer(
             query=query,
-            answer=answer_text,
-            citations=citations,
-            passages=[h.to_dict(language) for h in hits],
-            grounded=True,
-            confidence=min(1.0, top.score * 1.4),
+            answer=answer_text if is_grounded else (
+                "इस सवाल का भरोसेमंद जवाब उपलब्ध दस्तावेज़ों में नहीं मिला। "
+                "कृपया अपने नज़दीकी कृषि कार्यालय या संबंधित पोर्टल पर जाँच करें।"
+                if language == "hi"
+                else "A reliable answer to that specific question isn't available in the documents "
+                     "here. Please check with your nearest agriculture office or the relevant portal."
+            ),
+            citations=citations if is_grounded else [],
+            passages=[h.to_dict(language) for h in hits] if is_grounded else [],
+            grounded=is_grounded,
+            confidence=confidence,
             language=language,
         )
 

@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
-import os
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.config import get_settings
 from app.services.rag_service import rag_service
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ RECENCY_MARKERS = [
     "अंतिम तिथि", "कब आएगी", "कब मिलेगी",
 ]
 
-GROUNDED_THRESHOLD = float(os.getenv("RAG_MIN_CONFIDENCE", "0.28"))
+GROUNDED_THRESHOLD = get_settings().rag_min_confidence
 
 
 @dataclass
@@ -69,8 +69,9 @@ class SchemeAnswer:
 
 class SchemeAnswerService:
     def __init__(self) -> None:
-        self.api_key = os.getenv("TAVILY_API_KEY", "")
-        self.base_url = os.getenv("TAVILY_BASE_URL", "https://api.tavily.com").rstrip("/")
+        settings = get_settings()
+        self.api_key = settings.tavily_api_key
+        self.base_url = settings.tavily_base_url.rstrip("/")
 
     @property
     def tavily_enabled(self) -> bool:

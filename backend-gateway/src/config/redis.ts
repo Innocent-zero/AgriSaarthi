@@ -54,8 +54,18 @@ function memGet(key: string): string | null {
 
 function memSet(key: string, value: string, ttlSeconds: number): void {
   if (memory.size >= MEMORY_LIMIT) {
-    const oldest = memory.keys().next().value;
-    if (oldest) memory.delete(oldest);
+    // Prefer evicting an already-expired entry over the oldest-inserted one —
+    // pure FIFO eviction let a long-TTL-but-still-valid entry (e.g. a fresh
+    // soil-data lookup, TTL 7 days) get evicted to make room while a
+    // long-expired short-TTL entry (e.g. stale weather, TTL 30 min) sat
+    // untouched simply because it happened to be inserted more recently.
+    const now = Date.now();
+    let victim: string | undefined;
+    for (const [k, v] of memory) {
+      if (v.expiresAt <= now) { victim = k; break; }
+    }
+    victim ??= memory.keys().next().value;
+    if (victim) memory.delete(victim);
   }
   memory.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
 }

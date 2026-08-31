@@ -16,10 +16,9 @@ import axios from 'axios';
 import { z } from 'zod';
 import { swytchcode } from '../services/swytchcodeService';
 import { optionalAuth } from '../middleware/auth';
+import { ML_SERVICE_URL } from '../config/services';
 
 const router = Router();
-
-const ML = () => process.env.ML_SERVICE_URL || 'http://127.0.0.1:8010';
 
 const bodySchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -294,14 +293,17 @@ router.post('/detail', optionalAuth, async (req: Request, res: Response, next: N
   try {
     const body = z.object({
       schemeId: z.string().min(2).max(40),
-      question: z.string().min(2).max(300).optional(),
+      question: z.string().trim().max(300).optional(),
       language: z.enum(['hi', 'en']).default('hi'),
     }).parse(req.body);
 
-    const query = body.question
-      || `${body.schemeId} eligibility documents how to apply benefit amount`;
+    // trim() can leave a 1-char remainder ("?" alone, etc.) — treat anything
+    // under 2 chars the same as "not provided" rather than forwarding it.
+    const query = (body.question && body.question.length >= 2)
+      ? body.question
+      : `${body.schemeId} eligibility documents how to apply benefit amount`;
 
-    const { data } = await axios.post(`${ML()}/api/v1/rag/query`, {
+    const { data } = await axios.post(`${ML_SERVICE_URL}/api/v1/rag/query`, {
       query,
       language: body.language,
       scheme_id: body.schemeId,

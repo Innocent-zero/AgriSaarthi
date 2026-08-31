@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,6 +25,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.config import get_settings
 from app.services.vector_store import Chunk
 
 logger = logging.getLogger(__name__)
@@ -90,8 +90,9 @@ class RefreshReport:
 
 class TavilyIngestService:
     def __init__(self) -> None:
-        self.api_key = os.getenv("TAVILY_API_KEY", "")
-        self.base_url = os.getenv("TAVILY_BASE_URL", "https://api.tavily.com").rstrip("/")
+        settings = get_settings()
+        self.api_key = settings.tavily_api_key
+        self.base_url = settings.tavily_base_url.rstrip("/")
 
     @property
     def enabled(self) -> bool:

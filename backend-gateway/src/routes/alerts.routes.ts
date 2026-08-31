@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { swytchcode } from '../services/swytchcodeService';
 import { verifyWebhookSecret, requireAuth } from '../middleware/auth';
 import { cacheSet, cacheGet } from '../config/redis';
+import { ML_SERVICE_URL } from '../config/services';
 
 const router = Router();
 
@@ -177,12 +178,20 @@ router.post('/dispatch', requireAuth, async (req: Request, res: Response, next: 
 router.post('/refresh-kb', verifyWebhookSecret, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const { data } = await axios.post(
-      `${process.env.ML_SERVICE_URL || 'http://127.0.0.1:8010'}/api/v1/rag/refresh`,
+      `${ML_SERVICE_URL}/api/v1/rag/refresh`,
       {},
       { timeout: 180000 },
     );
     res.json({ success: true, ...data });
   } catch (err) {
+    if (axios.isAxiosError(err) && err.code === 'ECONNREFUSED') {
+      res.status(503).json({
+        success: false,
+        error: 'Knowledge service is not running. Start it with: make ml',
+        code: 'ML_SERVICE_DOWN',
+      });
+      return;
+    }
     next(err);
   }
 });

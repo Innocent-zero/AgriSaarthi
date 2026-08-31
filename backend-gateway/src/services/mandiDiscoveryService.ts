@@ -96,6 +96,29 @@ const DEFAULT_COMMISSION_PCT = 1.5;
 
 class MandiDiscoveryService {
   async discover(req: DiscoveryRequest): Promise<DiscoveryResult> {
+    const requestedRadius = req.radiusKm ?? Number(process.env.MANDI_SEARCH_RADIUS_KM || 120);
+    const first = await this.discoverOnce({ ...req, radiusKm: requestedRadius });
+
+    // A single surviving market is rarely "there is only one mandi nearby" —
+    // far more often it's the geocode budget or radius cutting the list
+    // short. One bounded retry at double the radius fixes the common case
+    // without turning every request into an unbounded search.
+    if (first.discovered.length >= 2 || requestedRadius >= 240) {
+      return first;
+    }
+
+    const widerRadius = Math.min(240, requestedRadius * 2);
+    const second = await this.discoverOnce({ ...req, radiusKm: widerRadius });
+    if (second.discovered.length > first.discovered.length) {
+      second.warnings.unshift(
+        `Search radius widened to ${widerRadius} km to find more than ${first.discovered.length} market(s).`,
+      );
+      return second;
+    }
+    return first;
+  }
+
+  private async discoverOnce(req: DiscoveryRequest): Promise<DiscoveryResult> {
     const warnings: string[] = [];
     const radiusKm = req.radiusKm ?? Number(process.env.MANDI_SEARCH_RADIUS_KM || 120);
     const maxCandidates = Number(process.env.MANDI_MAX_CANDIDATES || 12);

@@ -25,6 +25,13 @@ from app.services.plant_village_treatments import PLANT_VILLAGE_TREATMENT_KB
 
 logger = logging.getLogger(__name__)
 
+
+class NoLeafDetected(ValueError):
+    """Raised when _leaf_presence_score() decides the image has no leaf in
+    frame. Subclasses ValueError so it's caught by the same 400 handler as
+    other input-validation failures in main.py, without changing that
+    handler's behaviour."""
+
 TARGET_SIZE = (256, 256)
 
 # Default class list used only when no trained artifact exists yet (the
@@ -553,6 +560,58 @@ def _lesion_stats(bgr: np.ndarray, mask: np.ndarray) -> Tuple[np.ndarray, float]
     return feats, coverage * 100.0
 
 
+def _leaf_presence_score(bgr: np.ndarray) -> float:
+    """
+    Cheap, dependency-free "is there a leaf in this photo at all" gate, run
+    before the SVM ever sees the image. Reuses the same Otsu-on-saturation
+    segmentation as extract_features() rather than adding a second model.
+
+    Combines two signals so a single false positive doesn't let a non-leaf
+    photo through:
+      - segmented area fraction: how much of the frame the largest coherent
+        blob covers (a photo of a wall/sky/person rarely produces a single
+        large, leaf-shaped saturated region)
+      - vegetation-hue fraction: share of pixels whose hue falls in the
+        green→yellow→brown band that covers healthy and diseased foliage,
+        which a wall, skin tone, sky, or fabric will not populate.
+    """
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    sat = cv2.GaussianBlur(hsv[:, :, 1], (5, 5), 0)
+    _, raw_mask = cv2.threshold(sat, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    raw_mask = cv2.morphologyEx(raw_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    raw_mask = cv2.morphologyEx(raw_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(raw_mask, connectivity=8)
+    if n <= 1:
+        area_frac = 0.0
+        blob_mask = np.zeros_like(raw_mask)
+    else:
+        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        area_frac = float(stats[largest, cv2.CC_STAT_AREA]) / float(raw_mask.size)
+        blob_mask = np.where(labels == largest, 255, 0).astype(np.uint8)
+
+    # OpenCV hue is 0–179 for 0–358°. 15–100 covers yellow-green through
+    # green to olive/brown — healthy leaf, dried leaf, and most common
+    # lesion discoloration all fall inside it.
+    hue = hsv[:, :, 0]
+    veg_pixels = ((hue >= 15) & (hue <= 100) & (sat > 35))
+    veg_frac_of_blob = (
+        float(np.count_nonzero(veg_pixels & (blob_mask > 0))) / float(np.count_nonzero(blob_mask))
+        if np.count_nonzero(blob_mask) > 0 else 0.0
+    )
+    veg_frac_of_frame = float(np.count_nonzero(veg_pixels)) / float(hue.size)
+
+    # Weighted blend: a large, vegetation-colored blob scores highest; a
+    # smaller blob that's still strongly vegetation-colored (close-up leaf
+    # edge filling most of the frame) still passes via veg_frac_of_frame.
+    return min(1.0, 0.45 * area_frac + 0.35 * veg_frac_of_blob + 0.20 * veg_frac_of_frame)
+
+
+LEAF_PRESENCE_THRESHOLD = float(os.getenv("LEAF_PRESENCE_THRESHOLD", "0.12"))
+
+
 def extract_features(bgr: np.ndarray) -> Tuple[np.ndarray, float]:
     """Returns (74-d feature vector, lesion coverage %)."""
     img = cv2.resize(bgr, TARGET_SIZE, interpolation=cv2.INTER_AREA)
@@ -617,6 +676,10 @@ class LeafDiseaseClassifier:
             raise ValueError("Image could not be decoded — send a valid JPEG, PNG or WebP")
         if min(bgr.shape[:2]) < 48:
             raise ValueError("Image is too small — take a closer photo of a single leaf")
+
+        leaf_score = _leaf_presence_score(bgr)
+        if leaf_score < LEAF_PRESENCE_THRESHOLD:
+            raise NoLeafDetected("No leaf detected. Please upload a clear photo of a plant leaf.")
 
         vec, coverage = extract_features(bgr)
         proba = self.pipeline.predict_proba(vec.reshape(1, -1))[0]

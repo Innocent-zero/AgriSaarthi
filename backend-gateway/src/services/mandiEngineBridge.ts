@@ -85,7 +85,20 @@ export class MandiEngineError extends Error {
   }
 }
 
+// Resolved once, lazily, then reused for the life of the process. The binary
+// location can't change without a redeploy, so re-walking up to 11
+// filesystem candidates on every request (the previous behaviour) was pure
+// overhead on the hot path. Call resetResolvedBinaryCache() in tests if the
+// binary is rebuilt mid-process.
+let cachedBinaryPath: string | null = null;
+
+export function resetResolvedBinaryCache(): void {
+  cachedBinaryPath = null;
+}
+
 function resolveBinary(): string {
+  if (cachedBinaryPath) return cachedBinaryPath;
+
   const exe = process.platform === 'win32' ? '.exe' : '';
   const configured = process.env.MANDI_ENGINE_BIN;
 
@@ -107,7 +120,10 @@ function resolveBinary(): string {
 
   for (const c of candidates) {
     const abs = path.isAbsolute(c) ? c : path.resolve(process.cwd(), c);
-    if (fs.existsSync(abs)) return abs;
+    if (fs.existsSync(abs)) {
+      cachedBinaryPath = abs;
+      return abs;
+    }
   }
 
   throw new MandiEngineError(
@@ -116,7 +132,39 @@ function resolveBinary(): string {
   );
 }
 
-export function runMandiEngine(input: MandiEngineInput): Promise<MandiEngineOutput> {
+// A single mandi_router invocation is a fresh OS process (fork/exec, dynamic
+// linking, etc.), not a request against a warm long-running service. Nothing
+// previously stopped a burst of concurrent requests from spawning an
+// unbounded number of these at once — cap it and queue the rest.
+const MAX_CONCURRENT_ENGINE_PROCS = Number(process.env.MANDI_ENGINE_MAX_CONCURRENCY || 8);
+let inFlight = 0;
+const waiters: Array<() => void> = [];
+
+async function acquireSlot(): Promise<void> {
+  if (inFlight < MAX_CONCURRENT_ENGINE_PROCS) {
+    inFlight += 1;
+    return;
+  }
+  await new Promise<void>((res) => waiters.push(res));
+  inFlight += 1;
+}
+
+function releaseSlot(): void {
+  inFlight -= 1;
+  const next = waiters.shift();
+  if (next) next();
+}
+
+export async function runMandiEngine(input: MandiEngineInput): Promise<MandiEngineOutput> {
+  await acquireSlot();
+  try {
+    return await runMandiEngineNow(input);
+  } finally {
+    releaseSlot();
+  }
+}
+
+function runMandiEngineNow(input: MandiEngineInput): Promise<MandiEngineOutput> {
   return new Promise((resolve, reject) => {
     let binary: string;
     try {

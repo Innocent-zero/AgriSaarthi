@@ -45,7 +45,13 @@ function SchemeCard({ query, state, language }: { query: string; state?: string;
 
   useEffect(() => {
     let alive = true;
-    api.schemes(query, state, language)
+    // A missing/near-empty query means the agent didn't name a specific
+    // scheme — the gateway now falls back to a broad search for this case,
+    // but there's no reason to send a near-blank request in the first place.
+    const q = query.trim().length >= 2
+      ? query.trim()
+      : (language === 'hi' ? 'किसानों के लिए सरकारी योजनाएं और लाभ' : 'government schemes and benefits for farmers');
+    api.schemes(q, state, language)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setErr(friendlyError(e)));
     return () => { alive = false; };
