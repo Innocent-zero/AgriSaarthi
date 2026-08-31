@@ -1,4 +1,3 @@
-'use client';
 
 import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, Info, Loader2, BookOpen, ExternalLink } from 'lucide-react';

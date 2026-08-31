@@ -1,4 +1,3 @@
-'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { ShieldAlert, Loader2, Satellite, TrendingDown, TrendingUp, Minus } from 'lucide-react';

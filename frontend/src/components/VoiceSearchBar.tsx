@@ -1,4 +1,3 @@
-'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Send, Volume2, Languages } from 'lucide-react';
